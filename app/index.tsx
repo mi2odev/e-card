@@ -1,0 +1,104 @@
+import React from 'react';
+import { Image, KeyboardAvoidingView, Platform, ScrollView, Text, View } from 'react-native';
+import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { C, F } from '../src/theme';
+import { CARD_ART } from '../src/assets';
+import { CARD_RATIO } from '../src/ui/Cards';
+import { BigButton, GoldHairline, GradientText, HelpButton, NameField, shadow } from '../src/ui/kit';
+import { Glow, TableBackground } from '../src/ui/Radial';
+import { useGame } from '../src/store/useGame';
+
+export default function TitleScreen() {
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const p1 = useGame((s) => s.p1);
+  const p2 = useGame((s) => s.p2);
+  const setP1 = useGame((s) => s.setP1);
+  const setP2 = useGame((s) => s.setP2);
+
+  return (
+    <View style={{ flex: 1, backgroundColor: C.tableEdge }}>
+      <TableBackground />
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{
+            flexGrow: 1,
+            alignItems: 'center',
+            paddingTop: 36 + insets.top,
+            paddingHorizontal: 26,
+            paddingBottom: 20 + insets.bottom,
+          }}
+        >
+          {/* card cluster */}
+          <View style={{ width: 238, height: 156 }}>
+            <Glow color="rgba(212,165,60,0.26)" style={{ left: 14, top: 38, width: 210, height: 110 }} edge={0.68} />
+            <Image
+              source={CARD_ART.C}
+              style={[
+                { position: 'absolute', left: 14, top: 22, width: 86, height: 86 * CARD_RATIO, borderRadius: 8, transform: [{ rotate: '-13deg' }] },
+                shadow(10, 22, 0.6, 6),
+              ]}
+            />
+            <Image
+              source={CARD_ART.S}
+              style={[
+                { position: 'absolute', right: 14, top: 22, width: 86, height: 86 * CARD_RATIO, borderRadius: 8, transform: [{ rotate: '13deg' }] },
+                shadow(10, 22, 0.6, 6),
+              ]}
+            />
+            <Image
+              source={CARD_ART.E}
+              style={[
+                { position: 'absolute', left: '50%', marginLeft: -47, top: 2, width: 94, height: 94 * CARD_RATIO, borderRadius: 8, zIndex: 3 },
+                shadow(14, 28, 0.68, 10),
+              ]}
+            />
+          </View>
+
+          <View style={{ marginTop: 16 }}>
+            <GradientText style={{ fontFamily: F.display, fontSize: 76, lineHeight: 74, letterSpacing: 7, textAlign: 'center' }}>
+              E-CARD
+            </GradientText>
+          </View>
+
+          <Text style={{ marginTop: 9, fontFamily: F.semi, fontSize: 11, letterSpacing: 5, color: C.muted }}>
+            EMPEROR · CITIZEN · SLAVE
+          </Text>
+          <GoldHairline style={{ marginTop: 12 }} />
+          <Text style={{ marginTop: 10, fontFamily: F.body, fontSize: 10, letterSpacing: 2.5, color: C.muted5 }}>
+            TWO PLAYERS · ONE DEVICE · NO MERCY
+          </Text>
+
+          <View style={{ flex: 1, minHeight: 18 }} />
+
+          <View style={{ width: '100%', gap: 12 }}>
+            <NameField label="PLAYER 1" value={p1} onChangeText={setP1} placeholder="Enter a name" />
+            <NameField label="PLAYER 2" value={p2} onChangeText={setP2} placeholder="Enter a name" />
+            <BigButton
+              label="PASS & PLAY"
+              fontSize={26}
+              onPress={() => router.push('/setup')}
+              style={{ marginTop: 6 }}
+            />
+            <Text
+              style={{
+                textAlign: 'center',
+                fontFamily: F.body,
+                fontSize: 9.5,
+                letterSpacing: 2,
+                color: C.muted7,
+              }}
+            >
+              12 GAMES · SIDES SWAP EVERY 3 · THE SLAVE PAYS 5×
+            </Text>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+
+      <HelpButton style={{ position: 'absolute', top: 14 + insets.top, right: 14 }} />
+    </View>
+  );
+}
