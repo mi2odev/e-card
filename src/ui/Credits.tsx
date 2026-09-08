@@ -1,36 +1,79 @@
 /**
  * Who made this.
  *
- * Reached from the line under the two buttons on the title screen, and built in
- * the same idiom as the rules sheet — dark panel, gold hairline, blurred scrim —
- * so it belongs to the game rather than sitting on top of it.
+ * Reached from a button under the two on the title screen, and built in the same
+ * idiom as the rules sheet — dark panel, gold hairline, blurred scrim — so it
+ * belongs to the game rather than sitting on top of it. The four places to find
+ * the author are icons rather than addresses: nobody types a URL off a phone.
  */
 
 import React, { useState } from 'react';
 import { Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { BlurView } from 'expo-blur';
+// Imported by its own path: the package index pulls in every icon font there is,
+// and this app wants four glyphs out of one of them.
+import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { C, F } from '../theme';
-import { BigButton, GoldHairline, GradientText, shadow } from './kit';
+import { Appear, BigButton, GoldHairline, GradientText, shadow } from './kit';
 import { tapLight } from '../haptics';
 
 export const AUTHOR = 'MOHAMED MEHDI ZITOUNI';
+/** The initials, for the seal on the button and at the head of the sheet. */
+const MONOGRAM = 'MZ';
 
-type Link = { label: string; shown: string; url: string };
+type Place = {
+  label: string;
+  icon: React.ComponentProps<typeof FontAwesome>['name'];
+  url: string;
+};
 
-const LINKS: Link[] = [
-  { label: 'PORTFOLIO', shown: 'mohamedmehdi-zitouni.netlify.app', url: 'https://mohamedmehdi-zitouni.netlify.app/' },
-  { label: 'GITHUB', shown: 'github.com/mi2odev', url: 'https://github.com/mi2odev/' },
-  { label: 'INSTAGRAM', shown: '@_.mi2o', url: 'https://www.instagram.com/_.mi2o/' },
-  {
-    label: 'LINKEDIN',
-    shown: 'in/mohamed-mehdi-zitouni',
-    url: 'https://www.linkedin.com/in/mohamed-mehdi-zitouni-a84423418/',
-  },
+const PLACES: Place[] = [
+  { label: 'PORTFOLIO', icon: 'globe', url: 'https://mohamedmehdi-zitouni.netlify.app/' },
+  { label: 'GITHUB', icon: 'github', url: 'https://github.com/mi2odev/' },
+  { label: 'INSTAGRAM', icon: 'instagram', url: 'https://www.instagram.com/_.mi2o/' },
+  { label: 'LINKEDIN', icon: 'linkedin', url: 'https://www.linkedin.com/in/mohamed-mehdi-zitouni-a84423418/' },
 ];
 
-/** The line on the title screen. Discreet, and the whole of it is the target. */
-export function CreditsLine({ style }: { style?: ViewStyle }) {
-  const [open, setOpen] = useState(false);
+/** A phone with nothing to open a link with is not worth a crash, or a scolding. */
+const open = (url: string) => {
+  tapLight();
+  void Linking.openURL(url).catch(() => undefined);
+};
+
+/** The gold seal that stands in for a portrait. */
+function Monogram({ size = 40 }: { size?: number }) {
+  return (
+    <View
+      style={{
+        width: size,
+        height: size,
+        borderRadius: size / 2,
+        borderWidth: 1,
+        borderColor: C.goldBorder,
+        backgroundColor: 'rgba(212,165,60,0.08)',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <Text
+        style={{
+          fontFamily: F.display,
+          fontSize: size * 0.46,
+          lineHeight: size * 0.52,
+          letterSpacing: 1.5,
+          color: C.goldBright,
+          marginLeft: 1.5,
+        }}
+      >
+        {MONOGRAM}
+      </Text>
+    </View>
+  );
+}
+
+/** The button on the title screen: says who, and opens the rest. */
+export function CreditsButton({ style }: { style?: ViewStyle }) {
+  const [open_, setOpen] = useState(false);
   return (
     <>
       <Pressable
@@ -38,28 +81,69 @@ export function CreditsLine({ style }: { style?: ViewStyle }) {
           tapLight();
           setOpen(true);
         }}
-        hitSlop={10}
-        style={({ pressed }) => [{ alignItems: 'center', paddingVertical: 4, opacity: pressed ? 0.6 : 1 }, style]}
+        style={({ pressed }) => [
+          {
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 12,
+            paddingVertical: 11,
+            paddingLeft: 12,
+            paddingRight: 14,
+            borderRadius: 13,
+            borderWidth: 1,
+            borderColor: pressed ? C.goldBorder : C.hairline,
+            backgroundColor: pressed ? 'rgba(212,165,60,0.1)' : 'rgba(0,0,0,0.3)',
+          },
+          pressed && { transform: [{ translateY: 1 }] },
+          style,
+        ]}
       >
-        <Text style={{ fontFamily: F.body, fontSize: 9.5, letterSpacing: 2, color: C.muted7 }}>
-          {`CODED BY ${AUTHOR}`}
-        </Text>
-        <Text style={{ marginTop: 3, fontFamily: F.bold, fontSize: 8.5, letterSpacing: 2, color: C.goldSoft }}>
-          CREDITS
-        </Text>
+        <Monogram />
+        <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
+          <Text style={{ fontFamily: F.body, fontSize: 8.5, letterSpacing: 2.2, color: C.muted3 }}>CODED BY</Text>
+          <Text numberOfLines={1} style={{ fontFamily: F.bold, fontSize: 11.5, letterSpacing: 1.4, color: C.creamMute }}>
+            {AUTHOR}
+          </Text>
+        </View>
+        <Text style={{ fontFamily: F.display, fontSize: 20, lineHeight: 21, color: C.goldSoft }}>›</Text>
       </Pressable>
-      <CreditsModal visible={open} onClose={() => setOpen(false)} />
+      <CreditsModal visible={open_} onClose={() => setOpen(false)} />
     </>
   );
 }
 
-export function CreditsModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
-  const open = (url: string) => {
-    tapLight();
-    // A phone with no browser for it is not worth a crash, or a scolding.
-    void Linking.openURL(url).catch(() => undefined);
-  };
+/** One round, tappable place to find the author. */
+function PlaceButton({ place, delay }: { place: Place; delay: number }) {
+  return (
+    <Appear delay={delay} duration={300} from={10} scaleFrom={0.88} style={{ alignItems: 'center', gap: 7 }}>
+      <Pressable
+        onPress={() => open(place.url)}
+        hitSlop={6}
+        accessibilityRole="link"
+        accessibilityLabel={place.label}
+        style={({ pressed }) => [
+          {
+            width: 62,
+            height: 62,
+            borderRadius: 31,
+            borderWidth: 1,
+            borderColor: pressed ? C.gold : C.goldBorderFaint,
+            backgroundColor: pressed ? 'rgba(212,165,60,0.16)' : 'rgba(0,0,0,0.34)',
+            alignItems: 'center',
+            justifyContent: 'center',
+          },
+          shadow(4, 12, 0.45, 4),
+          pressed && { transform: [{ scale: 0.94 }] },
+        ]}
+      >
+        <FontAwesome name={place.icon} size={25} color={C.goldBright} />
+      </Pressable>
+      <Text style={{ fontFamily: F.body, fontSize: 8, letterSpacing: 1.6, color: C.muted3 }}>{place.label}</Text>
+    </Appear>
+  );
+}
 
+export function CreditsModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
       <BlurView intensity={26} tint="dark" style={StyleSheet.absoluteFill}>
@@ -110,11 +194,12 @@ export function CreditsModal({ visible, onClose }: { visible: boolean; onClose: 
                 </Pressable>
               </View>
 
-              <View style={{ alignItems: 'center', marginTop: 18 }}>
-                <Text style={{ fontFamily: F.body, fontSize: 9.5, letterSpacing: 3, color: C.muted3 }}>
+              <Appear duration={380} from={12} style={{ alignItems: 'center', marginTop: 18 }}>
+                <Monogram size={64} />
+                <Text style={{ marginTop: 12, fontFamily: F.body, fontSize: 9, letterSpacing: 3, color: C.muted3 }}>
                   DESIGNED AND CODED BY
                 </Text>
-                <View style={{ marginTop: 8 }}>
+                <View style={{ marginTop: 7 }}>
                   <GradientText
                     style={{ fontFamily: F.display, fontSize: 30, lineHeight: 33, letterSpacing: 2, textAlign: 'center' }}
                   >
@@ -122,41 +207,24 @@ export function CreditsModal({ visible, onClose }: { visible: boolean; onClose: 
                   </GradientText>
                 </View>
                 <GoldHairline width={90} style={{ marginTop: 12 }} />
-              </View>
+              </Appear>
 
-              <View style={{ gap: 9, marginTop: 18 }}>
-                {LINKS.map((link) => (
-                  <Pressable
-                    key={link.label}
-                    onPress={() => open(link.url)}
-                    style={({ pressed }) => ({
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      gap: 12,
-                      paddingVertical: 12,
-                      paddingHorizontal: 14,
-                      borderRadius: 12,
-                      borderWidth: 1,
-                      borderColor: pressed ? C.gold : C.hairline,
-                      backgroundColor: pressed ? 'rgba(212,165,60,0.12)' : C.panel,
-                    })}
-                  >
-                    <View style={{ flex: 1, gap: 3, minWidth: 0 }}>
-                      <Text style={{ fontFamily: F.semi, fontSize: 9, letterSpacing: 2, color: C.muted2 }}>
-                        {link.label}
-                      </Text>
-                      <Text numberOfLines={1} style={{ fontFamily: F.medium, fontSize: 13.5, color: C.cream }}>
-                        {link.shown}
-                      </Text>
-                    </View>
-                    <Text style={{ fontFamily: F.display, fontSize: 18, lineHeight: 19, color: C.goldSoft }}>↗</Text>
-                  </Pressable>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  justifyContent: 'space-between',
+                  marginTop: 20,
+                  paddingHorizontal: 4,
+                }}
+              >
+                {PLACES.map((place, i) => (
+                  <PlaceButton key={place.label} place={place} delay={160 + i * 70} />
                 ))}
               </View>
 
               <Text
                 style={{
-                  marginTop: 16,
+                  marginTop: 20,
                   fontFamily: F.body,
                   fontSize: 10,
                   lineHeight: 15,

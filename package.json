@@ -17,6 +17,7 @@
   "dependencies": {
     "@expo-google-fonts/barlow": "*",
     "@expo-google-fonts/bebas-neue": "*",
+    "@expo/vector-icons": "^15.1.1",
     "@react-native-masked-view/masked-view": "0.3.2",
     "expo": "~54.0.37",
     "expo-blur": "~15.0.7",

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
@@ -18,11 +18,17 @@ import {
   useKeyboard,
 } from '../src/ui/kit';
 import { Glow, TableBackground } from '../src/ui/Radial';
-import { CreditsLine } from '../src/ui/Credits';
+import { CreditsButton } from '../src/ui/Credits';
 import { useGame } from '../src/store/useGame';
 import { useNet } from '../src/store/useNet';
 import { resumeSession } from '../src/net/session';
 import { tapLight } from '../src/haptics';
+
+/** A slice of one timeline, so the pieces of the opening land one after another. */
+function phase(t: number, from: number, to: number): number {
+  'worklet';
+  return Math.min(1, Math.max(0, (t - from) / (to - from)));
+}
 
 export default function TitleScreen() {
   const router = useRouter();
@@ -50,6 +56,50 @@ export default function TitleScreen() {
   const heroStyle = useAnimatedStyle(() =>
     heroHeight ? { height: heroHeight * hero.value, opacity: hero.value } : {},
   );
+
+  // The opening. One timeline, sliced up, so the three cards land in turn and
+  // the name and the terms follow them onto the table.
+  const intro = useSharedValue(0);
+  useEffect(() => {
+    intro.value = withTiming(1, { duration: 1150, easing: Easing.out(Easing.cubic) });
+  }, [intro]);
+
+  const cardLeft = useAnimatedStyle(() => {
+    const p = phase(intro.value, 0, 0.5);
+    return {
+      opacity: p,
+      transform: [
+        { translateX: 26 * (1 - p) },
+        { translateY: 54 * (1 - p) },
+        { rotate: `${-13 * p - 30 * (1 - p)}deg` },
+        { scale: 0.82 + 0.18 * p },
+      ],
+    };
+  });
+  const cardRight = useAnimatedStyle(() => {
+    const p = phase(intro.value, 0.1, 0.6);
+    return {
+      opacity: p,
+      transform: [
+        { translateX: -26 * (1 - p) },
+        { translateY: 54 * (1 - p) },
+        { rotate: `${13 * p + 30 * (1 - p)}deg` },
+        { scale: 0.82 + 0.18 * p },
+      ],
+    };
+  });
+  const cardMiddle = useAnimatedStyle(() => {
+    const p = phase(intro.value, 0.22, 0.74);
+    return { opacity: p, transform: [{ translateY: 66 * (1 - p) }, { scale: 0.78 + 0.22 * p }] };
+  });
+  const wordmarkStyle = useAnimatedStyle(() => {
+    const p = phase(intro.value, 0.34, 0.86);
+    return { opacity: p, transform: [{ translateY: 14 * (1 - p) }] };
+  });
+  const strapStyle = useAnimatedStyle(() => {
+    const p = phase(intro.value, 0.48, 1);
+    return { opacity: p, transform: [{ translateY: 8 * (1 - p) }] };
+  });
   const gapStyle = useAnimatedStyle(() => ({ flex: hero.value, minHeight: 18 * hero.value }));
   const markStyle = useAnimatedStyle(() => ({ height: 34 * (1 - hero.value), opacity: 1 - hero.value }));
 
@@ -89,42 +139,47 @@ export default function TitleScreen() {
               {/* card cluster */}
               <View style={{ width: 238, height: 156 }}>
                 <Glow color="rgba(212,165,60,0.26)" style={{ left: 14, top: 38, width: 210, height: 110 }} edge={0.68} />
-                <Image
+                <Animated.Image
                   source={CARD_ART.C}
                   style={[
-                    { position: 'absolute', left: 14, top: 22, width: 86, height: 86 * CARD_RATIO, borderRadius: 8, transform: [{ rotate: '-13deg' }] },
+                    { position: 'absolute', left: 14, top: 22, width: 86, height: 86 * CARD_RATIO, borderRadius: 8 },
                     shadow(10, 22, 0.6, 6),
+                    cardLeft,
                   ]}
                 />
-                <Image
+                <Animated.Image
                   source={CARD_ART.S}
                   style={[
-                    { position: 'absolute', right: 14, top: 22, width: 86, height: 86 * CARD_RATIO, borderRadius: 8, transform: [{ rotate: '13deg' }] },
+                    { position: 'absolute', right: 14, top: 22, width: 86, height: 86 * CARD_RATIO, borderRadius: 8 },
                     shadow(10, 22, 0.6, 6),
+                    cardRight,
                   ]}
                 />
-                <Image
+                <Animated.Image
                   source={CARD_ART.E}
                   style={[
                     { position: 'absolute', left: '50%', marginLeft: -47, top: 2, width: 94, height: 94 * CARD_RATIO, borderRadius: 8, zIndex: 3 },
                     shadow(14, 28, 0.68, 10),
+                    cardMiddle,
                   ]}
                 />
               </View>
 
-              <View style={{ marginTop: 16 }}>
+              <Animated.View style={[{ marginTop: 16 }, wordmarkStyle]}>
                 <GradientText style={{ fontFamily: F.display, fontSize: 76, lineHeight: 74, letterSpacing: 7, textAlign: 'center' }}>
                   E-CARD
                 </GradientText>
-              </View>
+              </Animated.View>
 
-              <Text style={{ marginTop: 9, fontFamily: F.semi, fontSize: 11, letterSpacing: 5, color: C.muted }}>
-                EMPEROR · CITIZEN · SLAVE
-              </Text>
-              <GoldHairline style={{ marginTop: 12 }} />
-              <Text style={{ marginTop: 10, fontFamily: F.body, fontSize: 10, letterSpacing: 2.5, color: C.muted5 }}>
-                TWO PLAYERS · ONE DEVICE · NO MERCY
-              </Text>
+              <Animated.View style={[{ alignItems: 'center' }, strapStyle]}>
+                <Text style={{ marginTop: 9, fontFamily: F.semi, fontSize: 11, letterSpacing: 5, color: C.muted }}>
+                  EMPEROR · CITIZEN · SLAVE
+                </Text>
+                <GoldHairline style={{ marginTop: 12 }} />
+                <Text style={{ marginTop: 10, fontFamily: F.body, fontSize: 10, letterSpacing: 2.5, color: C.muted5 }}>
+                  TWO PLAYERS · ONE DEVICE · NO MERCY
+                </Text>
+              </Animated.View>
             </View>
           </Animated.View>
 
@@ -137,7 +192,7 @@ export default function TitleScreen() {
 
           <Animated.View style={gapStyle} />
 
-          <View style={{ width: '100%', gap: 12 }}>
+          <Appear delay={520} duration={480} from={16} style={{ width: '100%', gap: 12 }}>
             {resume ? (
               <Appear duration={420} from={10}>
                 <Pressable
@@ -202,8 +257,8 @@ export default function TitleScreen() {
             >
               12 ROUNDS · 5 CARDS EACH · THE SLAVE PAYS 5×
             </Text>
-            <CreditsLine style={{ marginTop: 2 }} />
-          </View>
+            <CreditsButton style={{ marginTop: 2 }} />
+          </Appear>
         </ScrollView>
       </KeyboardAvoidingView>
 

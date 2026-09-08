@@ -63,6 +63,7 @@ follow its vocabulary rather than a spec:
 | Stakes panel — purse presets, table minimum, keypad | `src/ui/Terms.tsx` | Same chip and panel language as the side picker; `AmountPad` is a new bottom sheet in the rules-modal idiom (`#0c130e`, gold hairline, `expo-blur` scrim) |
 | Wager controls — scaling ±, MIN/HALF/DOUBLE/¼/ALL IN, live 1× and 5× read-out | `app/scoreboard.tsx` | Replaces the design's fixed −5/+5/+25/ALL IN row. The gold numeral, its size and position are unchanged |
 | Two-phones lobby | `app/online.tsx`, `app/lobby.tsx` | The table code uses the `GAME n` gold gradient at 62 px; seats reuse the scoreboard row |
+| Credits | `src/ui/Credits.tsx` | The rules-sheet panel, a gold monogram seal, and four round icon buttons (`@expo/vector-icons`, FontAwesome imported by its own path so only that one font is bundled) |
 
 ## Motion the design did not specify
 
@@ -82,6 +83,10 @@ read as a glitch — each one is a fade or a slide in the same easing vocabulary
 | The dropped-link banner drops in, and breathes while it is still dialling | `app/_layout.tsx` | Amber and moving means the app is working on it; rust and still means it wants a tap |
 | A field's border warms to gold over 180 ms when it takes focus | `NameField` in `kit.tsx` | The design specified the two colours; the change between them was a jump |
 | The title's hero folds away while a name is being typed | `app/index.tsx` | See **Deliberate additions** above: it is a keyboard fix that happens to be the nicest one to look at |
+| The title deals itself in — three cards land in turn, then the wordmark, then the terms and the buttons | `app/index.tsx` | The app's opening shot. One timeline sliced into overlapping phases, 1.15 s end to end |
+| At the reveal, the winning card lifts and brightens and the losing one sinks and dims | `app/reveal.tsx` | The verdict was only ever in the banner underneath; now it lands on the cards. Runs on the existing `rev` steps, so the design's timings are untouched |
+| Discarded pairs cascade in, 70 ms apart | `app/select.tsx` | They accumulate as a round goes on, and arriving says so |
+| The wager bumps when it is moved | `app/scoreboard.tsx` | The number is the whole panel; it should answer a tap |
 | Dropped-link banner | `app/_layout.tsx` | One rust line above everything, only when the link is actually broken |
 | Confirm before abandoning | `src/ui/ExitGuard.tsx` | The design had no back button to guard. Same sheet as the rules modal; the safe choice is the gold button and the scrim, abandoning is the quiet rust outline. Replaces the scoreboard's old two-tap arm, which was too easy to trigger twice |
 
