@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { Image, ImageSourcePropType, Pressable, StyleSheet, Text, View, ViewStyle } from 'react-native';
-import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { Easing, useAnimatedStyle, useSharedValue, withDelay, withTiming } from 'react-native-reanimated';
 import { C, F } from '../theme';
 import { CARD_ART, CARD_BACK } from '../assets';
 import { shadow } from './kit';
@@ -193,13 +193,24 @@ export function FanCard({
     t.value = withTiming(raised ? 1 : 0, { duration: 260, easing: Easing.bezier(0.2, 0.8, 0.3, 1.18) });
   }, [raised, t]);
 
+  // The hand is dealt rather than posted: each card slides up into the fan a
+  // beat after the one before it, left to right, the way they leave a hand.
+  const dealt = useSharedValue(0);
+  useEffect(() => {
+    dealt.value = withDelay(index * 55, withTiming(1, { duration: 420, easing: Easing.bezier(0.2, 0.8, 0.3, 1) }));
+    // The deal happens once, when the hand arrives on screen.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const style = useAnimatedStyle(() => {
     const p = t.value;
+    const e = dealt.value;
     return {
+      opacity: e,
       transform: [
-        { translateY: drop + (-64 - drop) * p },
-        { rotate: `${angle * (1 - p)}deg` },
-        { scale: 1 + 0.09 * p },
+        { translateY: drop + (-64 - drop) * p + 140 * (1 - e) },
+        { rotate: `${angle * (1 - p) + 9 * (1 - e)}deg` },
+        { scale: (1 + 0.09 * p) * (0.94 + 0.06 * e) },
       ],
     };
   });
