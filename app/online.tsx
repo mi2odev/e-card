@@ -3,7 +3,18 @@ import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } fro
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C, F } from '../src/theme';
-import { Appear, BigButton, CodeField, HelpButton, NameField, Segmented, StatusLine, shadow } from '../src/ui/kit';
+import {
+  Appear,
+  BigButton,
+  CodeField,
+  HelpButton,
+  NameField,
+  Segmented,
+  StatusLine,
+  shadow,
+  useFieldScroller,
+  useKeyboard,
+} from '../src/ui/kit';
 import { TableBackground } from '../src/ui/Radial';
 import { useGame } from '../src/store/useGame';
 import { useNet } from '../src/store/useNet';
@@ -33,6 +44,11 @@ export default function OnlineScreen() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [ownIp, setOwnIp] = useState('');
+
+  // Same as everywhere a name is typed: make room for the keyboard, and put the
+  // field being filled in where the player can see it.
+  const { height: keyboard } = useKeyboard();
+  const form = useFieldScroller();
 
   // Only the host invents a code; the guest types the one they were shown.
   const [hostCode] = useState(code);
@@ -110,13 +126,15 @@ export default function OnlineScreen() {
       <TableBackground />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
+          ref={form.ref}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{
             flexGrow: 1,
             paddingHorizontal: 22,
             paddingTop: insets.top,
-            paddingBottom: 20 + insets.bottom,
+            paddingBottom: 20 + insets.bottom + (Platform.OS === 'android' ? keyboard : 0),
           }}
         >
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 12 }}>
@@ -228,17 +246,27 @@ export default function OnlineScreen() {
           />
           {error ? <StatusLine tone="rust" text={error} style={{ marginTop: 10 }} /> : null}
 
-          <View style={{ marginTop: 22 }}>
-            <NameField label="YOUR NAME" value={p1} onChangeText={setP1} placeholder="Enter a name" />
+          <View style={{ marginTop: 22 }} onLayout={form.track('name')}>
+            <NameField
+              label="YOUR NAME"
+              value={p1}
+              onChangeText={setP1}
+              placeholder="Enter a name"
+              onFocus={form.focus('name')}
+            />
           </View>
 
-          <Text style={{ fontFamily: F.semi, fontSize: 10, letterSpacing: 2, color: C.muted2, marginTop: 20, marginBottom: 8 }}>
+          <Text
+            onLayout={form.track('code')}
+            style={{ fontFamily: F.semi, fontSize: 10, letterSpacing: 2, color: C.muted2, marginTop: 20, marginBottom: 8 }}
+          >
             {role === 'host' ? 'YOUR TABLE CODE — READ IT OUT' : 'THE TABLE CODE'}
           </Text>
           <CodeField
             value={code}
             editable={role === 'guest'}
             onChangeText={(v) => setCode(normalizeRoomCode(v))}
+            onFocus={form.focus('code')}
           />
 
           {onHotspot ? (
@@ -300,12 +328,18 @@ export default function OnlineScreen() {
           ) : null}
 
           {needsAddress ? (
-            <Appear style={{ marginTop: 18 }}>
+            <Appear style={{ marginTop: 18 }} onLayout={form.track('address')}>
               <NameField
                 label={`RELAY ADDRESS · PORT ${DEFAULT_PORT}`}
                 value={address}
                 onChangeText={setAddress}
                 placeholder="192.168.1.20"
+                onFocus={form.focus('address')}
+                // An address is longer than a name, has no capitals in it, and is
+                // mostly digits and dots.
+                maxLength={31}
+                autoCapitalize="none"
+                keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'default'}
               />
               <Text style={{ fontFamily: F.body, fontSize: 9, letterSpacing: 1.2, color: C.muted7, marginTop: 8, lineHeight: 13 }}>
                 RUN `npm run relay` ON A COMPUTER ON THIS WI-FI AND ENTER THE ADDRESS IT PRINTS. BOTH PHONES USE THE SAME ONE.
