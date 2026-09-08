@@ -977,3 +977,113 @@ export function CodeField({
     />
   );
 }
+
+/* ------------------------------------------------------------ confirmation */
+/**
+ * A decision you cannot take back, put in front of the player before it happens.
+ * Same sheet as the rules modal so it reads as part of the table, not a system alert.
+ */
+export function ConfirmModal({
+  visible,
+  title,
+  body,
+  confirmLabel,
+  cancelLabel = 'KEEP PLAYING',
+  onConfirm,
+  onCancel,
+}: {
+  visible: boolean;
+  title: string;
+  body: string;
+  confirmLabel: string;
+  cancelLabel?: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel} statusBarTranslucent>
+      <BlurView intensity={26} tint="dark" style={StyleSheet.absoluteFill}>
+        {/* Tapping the scrim backs out — the safe choice is always the easy one. */}
+        <Pressable
+          onPress={onCancel}
+          style={{ flex: 1, backgroundColor: 'rgba(3,5,4,0.87)', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+        >
+          <Pressable
+            onPress={() => {}}
+            style={[
+              {
+                width: '100%',
+                backgroundColor: '#0c130e',
+                borderWidth: 1,
+                borderColor: C.goldBorder,
+                borderRadius: 16,
+                paddingHorizontal: 20,
+                paddingTop: 22,
+                paddingBottom: 20,
+              },
+              shadow(24, 60, 0.7, 18),
+            ]}
+          >
+            <Text
+              style={{
+                fontFamily: F.display,
+                fontSize: 30,
+                lineHeight: 33,
+                letterSpacing: 2.5,
+                color: C.creamWarm,
+                textAlign: 'center',
+              }}
+            >
+              {title}
+            </Text>
+            <GoldHairline width={72} style={{ alignSelf: 'center', marginTop: 12 }} />
+            <Text
+              style={{
+                marginTop: 14,
+                fontFamily: F.body,
+                fontSize: 12.5,
+                lineHeight: 12.5 * 1.55,
+                color: C.creamMute,
+                textAlign: 'center',
+              }}
+            >
+              {body}
+            </Text>
+
+            <BigButton
+              label={cancelLabel}
+              fontSize={21}
+              letterSpacing={2.5}
+              padV={16}
+              radius={12}
+              onPress={onCancel}
+              style={{ marginTop: 20 }}
+            />
+            <Pressable
+              onPress={() => {
+                tapLight();
+                onConfirm();
+              }}
+              style={({ pressed }) => [
+                {
+                  marginTop: 10,
+                  paddingVertical: 15,
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: C.rustBorder,
+                  alignItems: 'center',
+                  backgroundColor: pressed ? 'rgba(199,90,54,0.16)' : 'transparent',
+                },
+                pressed && { transform: [{ translateY: 1 }] },
+              ]}
+            >
+              <Text style={{ fontFamily: F.display, fontSize: 19, letterSpacing: 2.5, color: C.rustText }}>
+                {confirmLabel}
+              </Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </BlurView>
+    </Modal>
+  );
+}

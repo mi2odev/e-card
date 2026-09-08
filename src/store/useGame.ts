@@ -62,7 +62,6 @@ export type State = {
   result: Outcome | null;
   applied: boolean;
   history: HistoryEntry[];
-  quitArm: boolean;
   settings: Settings;
   phase: Phase;
   netRole: NetRole;
@@ -92,7 +91,7 @@ type Actions = {
   allIn: () => void;
   minBet: () => void;
   scaleStake: (factor: number) => void;
-  quitTap: () => 'armed' | 'quit';
+  endMatch: () => void;
   setPhase: (p: Phase) => void;
   startNet: (role: Exclude<NetRole, 'off'>, seat: PlayerKey) => void;
   endNet: () => void;
@@ -132,7 +131,6 @@ const initial: State = {
   result: null,
   applied: false,
   history: [],
-  quitArm: false,
   settings: DEFAULT_SETTINGS,
   phase: 'idle',
   netRole: 'off',
@@ -198,7 +196,6 @@ export const useGame = create<GameStore>((set, get) => ({
     const bank = bankOf(s, slavePlayer);
     set({
       game,
-      quitArm: false,
       stake: clampStake(s.stake || openingStake(s.settings.startingBankroll, s.settings.minStake), bank, s.settings.minStake),
       result: null,
       rev: 0,
@@ -378,14 +375,8 @@ export const useGame = create<GameStore>((set, get) => ({
     set({ stake: clampStake(Math.round(s.stake * factor), slaveBank(s), s.settings.minStake) });
   },
 
-  quitTap: () => {
-    if (get().quitArm) {
-      set({ quitArm: false, inMatch: false });
-      return 'quit';
-    }
-    set({ quitArm: true });
-    return 'armed';
-  },
+  /** Walk away from a match in progress. Nothing is kept — see ui/ExitGuard. */
+  endMatch: () => set({ inMatch: false, phase: 'idle', sel: -1, rev: 0, result: null, applied: false }),
 
   setPhase: (phase) => set({ phase }),
 

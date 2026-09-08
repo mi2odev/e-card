@@ -59,6 +59,7 @@ follow its vocabulary rather than a spec:
 | Wager controls — scaling ±, MIN/HALF/DOUBLE/¼/ALL IN, live 1× and 5× read-out | `app/scoreboard.tsx` | Replaces the design's fixed −5/+5/+25/ALL IN row. The gold numeral, its size and position are unchanged |
 | Two-phones lobby | `app/online.tsx`, `app/lobby.tsx` | The table code uses the `GAME n` gold gradient at 62 px; seats reuse the scoreboard row |
 | Dropped-link banner | `app/_layout.tsx` | One rust line above everything, only when the link is actually broken |
+| Confirm before abandoning | `src/ui/ExitGuard.tsx` | The design had no back button to guard. Same sheet as the rules modal; the safe choice is the gold button and the scrim, abandoning is the quiet rust outline. Replaces the scoreboard's old two-tap arm, which was too easy to trigger twice |
 
 Online play changes two things about the flow itself:
 

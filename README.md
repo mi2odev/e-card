@@ -140,6 +140,14 @@ Pass & play uses `router.replace`, so the previous screen is **unmounted** — t
 hand does not exist in the tree while the handoff cover is up. Online there is no shared
 screen to hide: the other hand was never sent.
 
+Because every in-match screen replaces rather than pushes, backing out would otherwise
+drop straight to the title and take the match with it. `src/ui/ExitGuard.tsx` is the one
+way out: the Android back button, the scoreboard's **ABANDON MATCH** and the lobby's
+**LEAVE THE TABLE** all raise the same confirmation, which says which round is on the
+table and who is left sitting at it. On the final tally there is nothing left to lose, so
+back just leaves — but it still closes any online session, or the phase router would bounce
+you back to the tally.
+
 ## Rules encoded
 
 E-Card as played in *Kaiji*.

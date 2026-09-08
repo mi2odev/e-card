@@ -212,6 +212,27 @@ async function testRoundPlay() {
   eq(g().history.length, 2, 'both rounds are recorded');
 }
 
+/* ------------------------------------------------------------ leaving a match */
+
+async function testLeaving() {
+  console.log('\nLeaving a match');
+  const { useGame } = await import('../src/store/useGame.ts?device=d');
+  const g = () => useGame.getState();
+
+  g().setStartingBankroll(100);
+  g().beginMatch();
+  g().deal();
+  eq([g().inMatch, g().phase], [true, 'select'], 'a match is under way');
+
+  g().endMatch();
+  eq(g().inMatch, false, 'walking away ends the match');
+  eq(g().phase, 'idle', 'and clears the phase, so the router stops steering');
+  eq(g().result, null, 'no half-resolved play is left behind');
+
+  // The title screen must not be able to bounce back into a dead match.
+  eq(g().netRole, 'off', 'no session is left running');
+}
+
 /* --------------------------------------------------------------- protocol */
 
 async function testProtocol() {
@@ -518,6 +539,7 @@ console.log('E-CARD self-test');
 await testRules();
 await testAnimeShape();
 await testRoundPlay();
+await testLeaving();
 await testProtocol();
 await testWire();
 await testDirectHost();

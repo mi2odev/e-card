@@ -1,6 +1,5 @@
 import React from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
-import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C, F } from '../src/theme';
 import { BigButton, Chip, GradientText, HelpButton, SideMono, StatusLine } from '../src/ui/kit';
@@ -8,12 +7,11 @@ import { SidePanel, StakesPanel } from '../src/ui/Terms';
 import { TableBackground } from '../src/ui/Radial';
 import { nameOf, useGame } from '../src/store/useGame';
 import { useNet } from '../src/store/useNet';
-import { stopSession } from '../src/net/session';
+import { requestExit } from '../src/ui/ExitGuard';
 import { STATUS_WORD } from '../src/net/protocol';
 import { tapLight } from '../src/haptics';
 
 export default function LobbyScreen() {
-  const router = useRouter();
   const insets = useSafeAreaInsets();
   const state = useGame();
   const net = useNet();
@@ -26,8 +24,7 @@ export default function LobbyScreen() {
 
   const leave = () => {
     tapLight();
-    stopSession('left the table');
-    router.replace('/');
+    requestExit();
   };
 
   return (
