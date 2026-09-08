@@ -76,36 +76,36 @@ export function startTcpHost(port: number, room: string, h: TcpHostHandlers): Tc
   const tcp = loadTcp();
   if (!tcp) return null;
 
-  let taken = false;
-
   // The package can be installed and still have no native side behind it — that
   // is exactly the case inside Expo Go — so every call into it is guarded and a
   // failure means "no direct hosting here", not a crash.
   try {
-    return listen(tcp, port, room, h, () => taken, (v) => {
-      taken = v;
-    });
+    return listen(tcp, port, room, h);
   } catch (e) {
     h.onError(errorText(e));
     return null;
   }
 }
 
-function listen(
-  tcp: TcpModule,
-  port: number,
-  room: string,
-  h: TcpHostHandlers,
-  isTaken: () => boolean,
-  setTaken: (v: boolean) => void,
-): TcpHostHandle | null {
+function listen(tcp: TcpModule, port: number, room: string, h: TcpHostHandlers): TcpHostHandle | null {
+  /** The one guest seat. `live` goes false the moment a socket stops owning it. */
+  let seat: { socket: RawSocket; live: boolean } | null = null;
+
   const server = tcp.createServer((socket) => {
-    // One guest per table. A second dialler is dropped without disturbing the game.
-    if (isTaken()) {
-      socket.destroy();
-      return;
+    // One guest per table — but a phone that dropped off the Wi-Fi leaves a
+    // socket that is dead without being closed, and it is the same phone that
+    // then needs the seat back. So the newest dialler takes it, and the old
+    // socket is dropped rather than the new one.
+    if (seat) {
+      seat.live = false;
+      try {
+        seat.socket.destroy();
+      } catch {
+        /* already gone */
+      }
     }
-    setTaken(true);
+    const mine = { socket, live: true };
+    seat = mine;
 
     const wrapped: ByteSocket = {
       write: (bytes) => socket.write(bytes),
@@ -116,10 +116,18 @@ function listen(
     };
 
     attachHostConnection(wrapped, room, {
-      onOpen: h.onGuest,
-      onText: h.onText,
+      onOpen: (conn) => {
+        if (mine.live) h.onGuest(conn);
+      },
+      onText: (text) => {
+        if (mine.live) h.onText(text);
+      },
       onClose: () => {
-        setTaken(false);
+        // A socket that was replaced is not a guest leaving: the seat it used to
+        // hold is already someone else's, and the table never noticed.
+        if (!mine.live) return;
+        mine.live = false;
+        seat = null;
         h.onGuestGone();
       },
     });

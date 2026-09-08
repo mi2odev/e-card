@@ -47,6 +47,36 @@ The host device owns the match: it shuffles, resolves every turn and moves the m
 It sends the other phone a **redacted** view of the table, so the opponent's hand and
 their face-down card are never on the wire at all — not merely hidden in the UI.
 
+### If a phone drops out
+
+A link that dies is not the end of the match. Wi-Fi hiccups, a screen locking, a phone
+carried out of the room, a tap on the wrong thing — all of it is recoverable, because the
+host still holds the whole match and hands the board back to whoever returns.
+
+- **The link is dialled again on its own.** A banner says so — amber while it is trying,
+  rust once it has given up — and tapping it starts over. Fourteen attempts, the first
+  inside a second and the last fifteen seconds apart, about two minutes in all. The lobby
+  gets a **TRY AGAIN** button for the same thing.
+- **Silence is noticed.** The two phones ping each other every four seconds; twelve seconds
+  without a word and the seat is shown as empty — which is the only way to spot a phone
+  that fell off the Wi-Fi without its socket ever closing. The pipe is kept and kept
+  probing, so a phone that was merely asleep is back on its first answer, and one whose
+  socket really is dead gets the redial above when the transport admits it.
+- **Coming back to the app dials at once.** Timers do not run while an app is in the
+  background, so returning to the foreground pokes the link rather than waiting out a
+  backoff that never counted down.
+- **The seat is held.** A phone that comes back on a new socket takes its own seat off the
+  stale one — in the relay and on a phone-hosted table both — and the player still sitting
+  there is never told their opponent left.
+- **Leaving is not final.** Walk away on purpose and the table is parked: the title screen
+  and **TWO PHONES** both offer **TAKE YOUR SEAT AGAIN**, with the round it was on. The host
+  re-opens the same code with the board exactly as it stood; a guest is simply sent it.
+
+What this does not do is survive the app being **closed** — nothing is written to disk, so
+the parked table is gone with the process. A guest can still rejoin by typing the code
+again, because the host is holding the table; but if the *host's* app is killed, the match
+it was keeping goes with it.
+
 ### Wi-Fi
 
 Both phones must be on the same network. Nothing leaves it and no internet is needed.
@@ -192,7 +222,7 @@ app/                 one file per screen, expo-router
   end.tsx            Match over
 src/game/logic.ts    pure rules and money maths (no React)
 src/store/useGame.ts zustand match state + actions
-src/store/useNet.ts  connection state for the lobby and the banner
+src/store/useNet.ts  connection state for the lobby, the banner and the offer to come back
 src/net/             see below
 src/ui/              kit.tsx (buttons, chips, keypad, rules modal), Terms.tsx, Cards.tsx, Radial.tsx
 src/theme.ts         every colour and font token from the design
@@ -205,7 +235,7 @@ scripts/selftest.ts  the checks behind `npm run selftest`
 ```
 protocol.ts    message shapes, room codes, encode/decode
 snapshot.ts    per-recipient redaction — the guarantee that a hand stays secret
-session.ts     host authority: broadcast snapshots, apply guest intents
+session.ts     host authority: broadcast snapshots, apply guest intents, and get a dropped link back
 actions.ts     what screens call; host acts, guest asks
 link.ts        the Link / TransportDriver interfaces
 wifi.ts        direct-host or relay, both plain WebSocket

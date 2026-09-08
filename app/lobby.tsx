@@ -8,6 +8,7 @@ import { TableBackground } from '../src/ui/Radial';
 import { nameOf, useGame } from '../src/store/useGame';
 import { useNet } from '../src/store/useNet';
 import { requestExit } from '../src/ui/ExitGuard';
+import { retryNow } from '../src/net/session';
 import { STATUS_WORD } from '../src/net/protocol';
 import { tapLight } from '../src/haptics';
 
@@ -80,6 +81,30 @@ export default function LobbyScreen() {
             tone={failed ? 'rust' : seated ? 'gold' : 'dim'}
             text={net.detail || STATUS_WORD[net.status]}
           />
+
+          {failed ? (
+            <Pressable
+              onPress={() => {
+                tapLight();
+                retryNow();
+              }}
+              style={({ pressed }) => ({
+                marginTop: 10,
+                height: 38,
+                paddingHorizontal: 20,
+                borderRadius: 999,
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderWidth: 1,
+                borderColor: C.goldBorder,
+                backgroundColor: pressed ? 'rgba(212,165,60,0.16)' : 'rgba(0,0,0,0.3)',
+              })}
+            >
+              <Text style={{ fontFamily: F.bold, fontSize: 10.5, letterSpacing: 2.5, color: C.goldSoft }}>
+                TRY AGAIN
+              </Text>
+            </Pressable>
+          ) : null}
 
           {net.info?.hint ? (
             <Chip

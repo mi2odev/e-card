@@ -515,6 +515,231 @@ async function testOnlineMatch() {
   }
 }
 
+/* ------------------------------------------------ coming back to the table */
+
+/**
+ * The floor is pulled out from under a match in progress — the relay is killed,
+ * which takes both sockets with it — and then put back. Neither phone should
+ * lose the match, and neither player should have to do anything about it.
+ */
+async function testComingBack() {
+  console.log('\nComing back after a drop');
+  const port = PORT + 6;
+  let relay = spawn('node', [resolvePath(ROOT, 'server/relay.js')], {
+    env: { ...process.env, PORT: String(port) },
+    stdio: ['ignore', 'ignore', 'pipe'],
+  });
+  await sleep(500);
+
+  try {
+    const A = {
+      session: await import('../src/net/session.ts?device=ra'),
+      game: await import('../src/store/useGame.ts?device=ra'),
+      net: await import('../src/store/useNet.ts?device=ra'),
+      actions: await import('../src/net/actions.ts?device=ra'),
+    };
+    const B = {
+      session: await import('../src/net/session.ts?device=rb'),
+      game: await import('../src/store/useGame.ts?device=rb'),
+      net: await import('../src/store/useNet.ts?device=rb'),
+      actions: await import('../src/net/actions.ts?device=rb'),
+    };
+    const host = () => A.game.useGame.getState();
+    const guest = () => B.game.useGame.getState();
+    const hostNet = () => A.net.useNet.getState();
+    const guestNet = () => B.net.useNet.getState();
+
+    const common = { kind: 'wifi' as const, code: ROOM, address: '127.0.0.1', port };
+    await A.session.startSession({ ...common, role: 'host', name: 'Kaiji' });
+    await sleep(150);
+    await B.session.startSession({ ...common, role: 'guest', name: 'Tonegawa' });
+    await until(() => hostNet().peerHere && guestNet().peerHere, 'the two phones are at the table');
+
+    host().setStartingBankroll(500);
+    host().beginMatch();
+    await until(() => guest().phase === 'scoreboard', 'the match is under way');
+    B.actions.netSetStake(100);
+    await until(() => host().stake === 100, 'the wager is named');
+    B.actions.netDeal();
+    await until(() => guest().phase === 'select' && !!guest().hands, 'the cards are dealt');
+    const handBefore = guest().hands!.slv.map((c) => c.id);
+
+    // The relay dies mid-round, taking both sockets with it.
+    relay.kill('SIGKILL');
+    await until(() => guestNet().retrying || hostNet().retrying, 'a link that drops is dialled again, not mourned');
+    eq(guest().phase, 'select', 'and the match stays on screen while it dials');
+    eq(guest().hands!.slv.map((c) => c.id), handBefore, 'nobody loses their hand over it');
+
+    relay = spawn('node', [resolvePath(ROOT, 'server/relay.js')], {
+      env: { ...process.env, PORT: String(port) },
+      stdio: ['ignore', 'ignore', 'pipe'],
+    });
+    await until(() => hostNet().peerHere && guestNet().peerHere, 'both phones find the table again', 25000);
+    eq([guestNet().retrying, hostNet().retrying], [false, false], 'and stop dialling once they are back');
+    eq(host().p2, 'Tonegawa', 'the host still knows who came back');
+    eq(guest().p1, 'Kaiji', 'and the guest who it is playing');
+    eq(guest().hands!.slv.map((c) => c.id), handBefore, 'the guest holds the hand it was dealt');
+
+    // The round carries on from exactly where it stopped.
+    A.actions.netPick(host().hands!.emp.findIndex((c) => c.t === 'C'));
+    await until(() => guest().picker === 'slv', 'play carries on where it left off');
+    B.actions.netPick(guest().hands!.slv.findIndex((c) => c.t === 'C'));
+    await until(() => host().phase === 'reveal' && guest().phase === 'reveal', 'and both phones resolve the play');
+
+    /* ---------------------------------------- leaving on purpose, then coming back */
+
+    console.log('\nTaking the seat again');
+    B.actions.netAdvance();
+    await until(() => guest().turn === 2 || guest().game === 2, 'the match moves on');
+
+    B.session.stopSession('THE OTHER PLAYER LEFT THE TABLE');
+    await sleep(200);
+    eq(guest().netRole, 'off', 'the guest is off the table');
+    eq(guestNet().resume?.code, ROOM, 'but the table it left is remembered');
+    eq(guestNet().resume?.inMatch, true, 'along with the fact a match was on it');
+    await until(() => !hostNet().peerHere, 'the host is told the seat is empty');
+    eq(hostNet().status, 'waiting', 'and holds the table open rather than closing it');
+    eq(host().inMatch, true, 'the match is still the host to keep');
+
+    await B.session.resumeSession();
+    await until(() => guestNet().peerHere && hostNet().peerHere, 'the seat is taken again', 10000);
+    await until(() => guest().phase === host().phase, 'and the board comes back as the host has it');
+    eq([guest().p1pts, guest().p2pts], [host().p1pts, host().p2pts], 'with the purses the host has been keeping');
+    eq(guest().game, host().game, 'on the round the match had reached');
+    eq(guest().p1, 'Kaiji', 'and the host named again');
+    eq(guestNet().resume, null, 'the offer to come back is gone once the seat is taken');
+
+    /* ------------------------------------- the phone holding the table walks off */
+
+    console.log('\nWhen the other phone closes the table');
+    A.session.stopSession('THE OTHER PLAYER LEFT THE TABLE');
+    await until(() => guestNet().status === 'closed', 'the guest is told the table closed');
+    eq(guestNet().detail, 'THE OTHER PLAYER LEFT THE TABLE', 'in so many words');
+    eq(guestNet().retrying, false, 'and does not sit there dialling a table nobody is holding');
+    eq(hostNet().resume?.code, ROOM, 'the host keeps the table to come back to');
+
+    await A.session.resumeSession();
+    B.session.retryNow();
+    await until(() => guestNet().peerHere && hostNet().peerHere, 'the two are back once it re-opens', 15000);
+    await until(() => guest().phase === host().phase, 'on the board the host was keeping');
+    eq(host().inMatch, true, 'with the match still running');
+    eq([guest().p1pts, guest().p2pts], [host().p1pts, host().p2pts], 'and the purses intact');
+
+    A.session.stopSession('done');
+    B.session.stopSession('done');
+    await sleep(150);
+  } finally {
+    relay.kill();
+  }
+}
+
+/**
+ * A phone can stop answering with its socket still wide open — asleep, or off
+ * the network in a way nothing downstream has noticed yet. The table has to
+ * notice by itself, and it has to notice without throwing the link away.
+ */
+async function testGoneQuiet() {
+  console.log('\nA phone that stops answering');
+  const port = PORT + 10;
+  const relay = spawn('node', [resolvePath(ROOT, 'server/relay.js')], {
+    env: { ...process.env, PORT: String(port) },
+    stdio: ['ignore', 'ignore', 'pipe'],
+  });
+  await sleep(500);
+
+  try {
+    const H = {
+      session: await import('../src/net/session.ts?device=rq'),
+      net: await import('../src/store/useNet.ts?device=rq'),
+    };
+    const hostNet = () => H.net.useNet.getState();
+
+    await H.session.startSession({
+      kind: 'wifi',
+      role: 'host',
+      code: ROOM,
+      address: '127.0.0.1',
+      port,
+      name: 'Kaiji',
+    });
+
+    // A challenger that sits down and then says nothing at all — not even the
+    // pongs the app answers with, since this one is a bare socket.
+    const ghost = await new Promise<WebSocket>((resolve) => {
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/?room=${ROOM}&role=guest`);
+      ws.onopen = () => resolve(ws);
+    });
+    ghost.send(JSON.stringify({ t: 'hello', v: 1, name: 'Tonegawa' }));
+    await until(() => hostNet().peerHere, 'the challenger is seated');
+
+    await until(() => !hostNet().peerHere, 'a phone that stops answering is noticed', 25000);
+    check(
+      hostNet().detail.includes('GONE QUIET'),
+      'and is described as quiet rather than gone',
+      hostNet().detail,
+    );
+    eq(hostNet().status, 'connected', 'but the table is not thrown away over it');
+
+    ghost.send(JSON.stringify({ t: 'pong', ts: 1 }));
+    await until(() => hostNet().peerHere, 'and the seat fills again the moment it answers');
+
+    ghost.close();
+    H.session.stopSession();
+    await sleep(150);
+  } finally {
+    relay.kill();
+  }
+}
+
+/**
+ * A phone that lost Wi-Fi leaves a socket the relay has not yet buried, and it
+ * is the same phone that comes back wanting that seat.
+ */
+async function testWarmSeat() {
+  console.log('\nA seat that is still warm');
+  const port = PORT + 8;
+  const relay = spawn('node', [resolvePath(ROOT, 'server/relay.js')], {
+    env: { ...process.env, PORT: String(port) },
+    stdio: ['ignore', 'ignore', 'pipe'],
+  });
+  await sleep(500);
+
+  const open = (role: string) =>
+    new Promise<WebSocket | null>((resolve) => {
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/?room=${ROOM}&role=${role}`);
+      ws.onopen = () => resolve(ws);
+      ws.onerror = () => resolve(null);
+    });
+
+  try {
+    const host = await open('host');
+    const seen: string[] = [];
+    host!.onmessage = (e) => seen.push(String(e.data));
+    const first = await open('guest');
+    await sleep(150);
+
+    // The first guest never closes: as far as the relay knows it is still there.
+    const second = await open('guest');
+    check(second !== null, 'a phone coming back is not turned away from its own seat');
+    await sleep(250);
+
+    const states = seen.map((raw) => JSON.parse(raw)).filter((m) => m.t === 'peer').map((m) => m.state);
+    eq(states, ['joined', 'joined'], 'and the phone holding the table is never told its challenger left');
+
+    second?.send(JSON.stringify({ t: 'hello', v: 1, name: 'Tonegawa' }));
+    await sleep(200);
+    check(
+      seen.some((raw) => JSON.parse(raw).t === 'hello'),
+      'the seat works: the returning phone is heard',
+    );
+    first?.close();
+    second?.close();
+    host?.close();
+  } finally {
+    relay.kill();
+  }
+}
+
 /* ------------------------------------------- what happens when nothing is there */
 
 async function testUnreachable() {
@@ -607,6 +832,9 @@ await testWire();
 await testDirectHost();
 await testRedaction();
 await testOnlineMatch();
+await testComingBack();
+await testGoneQuiet();
+await testWarmSeat();
 await testUnreachable();
 
 console.log(`\n${checks - failures}/${checks} checks passed\n`);

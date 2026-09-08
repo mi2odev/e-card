@@ -1,5 +1,5 @@
 import React from 'react';
-import { Image, KeyboardAvoidingView, Platform, ScrollView, Text, View } from 'react-native';
+import { Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C, F } from '../src/theme';
@@ -8,6 +8,9 @@ import { CARD_RATIO } from '../src/ui/Cards';
 import { BigButton, GoldHairline, GradientText, HelpButton, NameField, OutlineButton, shadow } from '../src/ui/kit';
 import { Glow, TableBackground } from '../src/ui/Radial';
 import { useGame } from '../src/store/useGame';
+import { useNet } from '../src/store/useNet';
+import { resumeSession } from '../src/net/session';
+import { tapLight } from '../src/haptics';
 
 export default function TitleScreen() {
   const router = useRouter();
@@ -16,6 +19,21 @@ export default function TitleScreen() {
   const p2 = useGame((s) => s.p2);
   const setP1 = useGame((s) => s.setP1);
   const setP2 = useGame((s) => s.setP2);
+  // Left a table, by accident or otherwise? This is where the phone lands, so
+  // this is where the way back belongs.
+  const resume = useNet((s) => s.resume);
+
+  const takeSeatAgain = async () => {
+    tapLight();
+    try {
+      await resumeSession();
+      router.replace('/lobby');
+    } catch {
+      // Something about that table no longer works; the two-phones screen says
+      // what, and can open it again by hand.
+      router.push('/online');
+    }
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: C.tableEdge }}>
@@ -75,6 +93,30 @@ export default function TitleScreen() {
           <View style={{ flex: 1, minHeight: 18 }} />
 
           <View style={{ width: '100%', gap: 12 }}>
+            {resume ? (
+              <Pressable
+                onPress={() => void takeSeatAgain()}
+                style={({ pressed }) => [
+                  {
+                    paddingVertical: 12,
+                    paddingHorizontal: 16,
+                    borderRadius: 12,
+                    borderWidth: 1,
+                    borderColor: C.goldBorder,
+                    backgroundColor: pressed ? 'rgba(212,165,60,0.14)' : 'rgba(0,0,0,0.32)',
+                    gap: 3,
+                  },
+                  shadow(4, 12, 0.4, 3),
+                ]}
+              >
+                <Text style={{ fontFamily: F.bold, fontSize: 11, letterSpacing: 2.2, color: C.goldBright }}>
+                  {`TAKE YOUR SEAT AGAIN · ${resume.code}`}
+                </Text>
+                <Text style={{ fontFamily: F.body, fontSize: 9, letterSpacing: 1.6, color: C.muted7 }}>
+                  {resume.inMatch ? `ROUND ${resume.game} OF 12 WAS STILL ON THE TABLE` : 'THE TABLE YOU LEFT'}
+                </Text>
+              </Pressable>
+            ) : null}
             <NameField label="PLAYER 1" value={p1} onChangeText={setP1} placeholder="Enter a name" />
             <NameField label="PLAYER 2" value={p2} onChangeText={setP2} placeholder="Enter a name" />
             <BigButton
