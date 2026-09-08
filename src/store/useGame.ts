@@ -9,6 +9,7 @@ import {
   TOTAL_GAMES,
   clampStake,
   emperorPlayer,
+  firstPlacer,
   freshHands,
   normalizeBankroll,
   normalizeMinStake,
@@ -18,7 +19,8 @@ import {
   stakeStep,
 } from '../game/logic';
 
-export type HistoryEntry = { g: number; winner: PlayerKey; winSide: Side; paid: number };
+/** `winner` is null for a round that ran its three plays without a decision. */
+export type HistoryEntry = { g: number; winner: PlayerKey | null; winSide: Side | null; paid: number };
 export type RevealStep = 0 | 1 | 2 | 3 | 4;
 
 /** Where the match is. Drives navigation on both devices when playing online. */
@@ -180,7 +182,8 @@ export const useGame = create<GameStore>((set, get) => ({
       hands: null,
       discards: [],
       picks: { emp: null, slv: null },
-      picker: 'emp',
+      picker: firstPlacer(1, 1),
+      turn: 1,
       sel: -1,
       result: null,
       rev: 0,
@@ -204,19 +207,21 @@ export const useGame = create<GameStore>((set, get) => ({
     });
   },
 
-  deal: () =>
+  deal: () => {
+    const game = get().game;
     set({
       hands: freshHands(),
       discards: [],
       picks: { emp: null, slv: null },
-      picker: 'emp',
+      picker: firstPlacer(game, 1),
       sel: -1,
       turn: 1,
       result: null,
       rev: 0,
       applied: false,
       phase: 'select',
-    }),
+    });
+  },
 
   tapCard: (i) => {
     const s = get();
@@ -229,24 +234,25 @@ export const useGame = create<GameStore>((set, get) => ({
     return 'raised';
   },
 
-  /** Pass & play: the side currently holding the device commits, then the device changes hands. */
+  /** Pass & play: the side whose turn it is commits, then the device changes hands. */
   confirmSel: () => {
     const s = get();
     if (s.sel < 0) return 'noop';
     const out = get().submitPick(s.picker, s.sel);
     if (out === 'noop') return 'noop';
-    if (out === 'reveal') return 'reveal';
-    set({ picker: s.picker === 'emp' ? 'slv' : 'emp' });
-    return 'handoff';
+    return out === 'reveal' ? 'reveal' : 'handoff';
   },
 
   /**
-   * Commit one side's card. Host-authoritative: online, both seats submit
-   * independently and the turn resolves the moment the second card lands.
+   * Commit one side's card.
+   *
+   * The two sides never place at the same time: `picker` says whose turn it is,
+   * and a card from the other side is refused. Host-authoritative online, where
+   * the same field makes the far phone wait its turn.
    */
   submitPick: (side, index) => {
     const s = get();
-    if (!s.hands || s.picks[side]) return 'noop';
+    if (!s.hands || s.picks[side] || s.picker !== side) return 'noop';
     const hand = s.hands[side].slice();
     if (index < 0 || index >= hand.length) return 'noop';
     const card = hand.splice(index, 1)[0];
@@ -254,7 +260,7 @@ export const useGame = create<GameStore>((set, get) => ({
     const picks = { ...s.picks, [side]: card };
 
     if (!picks.emp || !picks.slv) {
-      set({ hands, picks, sel: -1 });
+      set({ hands, picks, sel: -1, picker: side === 'emp' ? 'slv' : 'emp' });
       return 'waiting';
     }
     set({
@@ -277,8 +283,21 @@ export const useGame = create<GameStore>((set, get) => ({
     const r = s.result;
     if (!r) return;
     // The guest mirrors the host's tally; it never moves money itself.
-    if (r.draw || s.netRole === 'guest') {
+    if (s.netRole === 'guest') {
       set({ applied: true });
+      return;
+    }
+    if (r.draw) {
+      // Three drawn plays end the round with nobody winning and no money moving,
+      // but it was still one of the twelve and belongs on the record.
+      set(
+        r.final
+          ? {
+              applied: true,
+              history: s.history.concat([{ g: s.game, winner: null, winSide: null, paid: 0 }]),
+            }
+          : { applied: true },
+      );
       return;
     }
     const paid = s.stakesOn ? r.paid : 0;
@@ -309,12 +328,13 @@ export const useGame = create<GameStore>((set, get) => ({
     const r = s.result;
     if (!r) return 'noop';
 
-    if (r.draw) {
+    if (r.draw && !r.final) {
+      const turn = s.turn + 1;
       set({
         discards: s.discards.concat([s.turn]),
-        turn: s.turn + 1,
+        turn,
         picks: { emp: null, slv: null },
-        picker: 'emp',
+        picker: firstPlacer(s.game, turn),
         sel: -1,
         rev: 0,
         result: null,
@@ -393,6 +413,7 @@ function computeResult(s: State): Outcome | null {
     slvCard: v.t,
     resolvedStart: s.resolvedStart,
     game: s.game,
+    turn: s.turn,
     stake: s.stake,
     stakesOn: s.stakesOn,
     banks: { p1: s.p1pts, p2: s.p2pts },

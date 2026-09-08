@@ -346,7 +346,7 @@ export function HistoryStrip({
   inMatch,
   style,
 }: {
-  history: Array<{ g: number; winner: 'p1' | 'p2'; winSide: 'emp' | 'slv' }>;
+  history: Array<{ g: number; winner: 'p1' | 'p2' | null; winSide: 'emp' | 'slv' | null }>;
   currentGame: number;
   inMatch: boolean;
   style?: ViewStyle;
@@ -356,6 +356,17 @@ export function HistoryStrip({
     <View style={[{ flexDirection: 'row', gap: 5, justifyContent: 'center' }, style]}>
       {Array.from({ length: 12 }, (_, i) => i + 1).map((g) => {
         const h = byGame.get(g);
+        // A round that ran its three plays without a decision: played, won by nobody.
+        if (h && h.winner === null) {
+          return (
+            <View
+              key={g}
+              style={[pip.base, { borderWidth: 1, borderColor: 'rgba(212,165,60,0.3)', backgroundColor: 'rgba(255,255,255,0.06)' }]}
+            >
+              <Text style={[pip.txt, { color: C.muted6 }]}>–</Text>
+            </View>
+          );
+        }
         if (h) {
           const gold = h.winSide === 'emp';
           return (
@@ -483,12 +494,12 @@ export function HelpButton({ style }: { style?: ViewStyle }) {
 }
 
 const RULES = [
-  'The Emperor side holds 1 Emperor + 4 Citizens. The Slave side holds 1 Slave + 4 Citizens.',
-  'Each turn, both players secretly play one card. The cards are flipped together.',
-  'Citizen vs Citizen is a draw — both cards are discarded and the game continues.',
-  'A game ends the instant a special card wins or loses.',
-  'A match is 12 games. Sides swap every 3 — each player holds each side twice.',
-  'Stakes: the Slave side sets the wager. An Emperor-side win collects 1× — a Slave-side win collects 5×. The loser pays, down to their last point.',
+  'The Emperor side holds 1 Emperor + 4 Citizens. The Slave side holds 1 Slave + 4 Citizens. Fresh hands every round.',
+  'One side lays its card face down first and the other answers, then both are flipped. The Emperor side opens round 1; who goes first alternates on every play and again at each new round.',
+  'Citizen vs Citizen is a draw — both cards are discarded and the round continues.',
+  'A round is three plays at most. It ends the instant a special card wins or loses; if all three plays are drawn, the round is spent and neither side takes it.',
+  'A match is 12 rounds in 4 sets of 3. Sides swap between sets, so each player holds each side for 6 rounds.',
+  'Stakes: an Emperor-side win collects 1× the wager — a Slave-side win collects 5×. The loser pays, down to their last point.',
 ];
 
 export function RulesModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {

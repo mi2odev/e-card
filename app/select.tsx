@@ -8,7 +8,7 @@ import { BigButton, Chip, Fade, HelpButton, SideMono, StatusLine } from '../src/
 import { DiscardPair, FanCard, MiniBack } from '../src/ui/Cards';
 import { TableBackground } from '../src/ui/Radial';
 import { localPlayer, localSide, nameOf, otherSide, sidePlayerNow, useGame } from '../src/store/useGame';
-import { LABEL, SIDE_WORD, fmt } from '../src/game/logic';
+import { LABEL, PLAYS_PER_GAME, SIDE_WORD, fmt } from '../src/game/logic';
 import { netPick } from '../src/net/actions';
 import { tapMedium, tick } from '../src/haptics';
 
@@ -16,12 +16,16 @@ export default function SelectScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const state = useGame();
-  const { hands, sel, game, turn, stakesOn, stake, discards, picks, settings, netRole, tapCard, confirmSel } = state;
+  const { hands, sel, game, turn, stakesOn, stake, discards, picks, settings, netRole, picker, tapCard, confirmSel } =
+    state;
 
   const online = netRole !== 'off';
   // Offline the side is whoever holds the phone; online it is this device's seat.
   const mySide = localSide(state);
   const theirSide = otherSide(mySide);
+  // The two sides never place together: one lays face down first and the other
+  // answers. Offline the handoff already put the right player here.
+  const myTurn = picker === mySide;
 
   const holder = localPlayer(state);
   const opp = sidePlayerNow(state, theirSide);
@@ -29,6 +33,7 @@ export default function SelectScreen() {
   const myHand = hands ? hands[mySide] : [];
   const oppLocked = !!picks[theirSide];
   const iAmLocked = !!picks[mySide];
+  const canPlay = myTurn && !iAmLocked;
   const selCard = sel >= 0 ? myHand[sel] : undefined;
 
   const commit = () => {
@@ -44,7 +49,7 @@ export default function SelectScreen() {
   };
 
   const onCardPress = (i: number) => {
-    if (iAmLocked) return;
+    if (!canPlay) return;
     if (tapCard(i) === 'confirm') commit();
     else tick();
   };
@@ -69,7 +74,10 @@ export default function SelectScreen() {
         </View>
 
         <View style={{ flexDirection: 'row', gap: 8, paddingTop: 11, paddingHorizontal: 16, flexWrap: 'wrap' }}>
-          <Chip label={`GAME ${game} OF 12 · TURN ${turn}`} style={{ paddingVertical: 6, paddingHorizontal: 13 }} />
+          <Chip
+            label={`ROUND ${game} OF 12 · PLAY ${turn} OF ${PLAYS_PER_GAME}`}
+            style={{ paddingVertical: 6, paddingHorizontal: 13 }}
+          />
           {stakesOn ? (
             <Chip tone="rust" label={`STAKE ${fmt(stake)}`} style={{ paddingVertical: 6, paddingHorizontal: 13 }} />
           ) : null}
@@ -119,7 +127,7 @@ export default function SelectScreen() {
             gap: 16,
             paddingTop: 8,
             paddingHorizontal: 16,
-            paddingBottom: (iAmLocked ? 40 : 244) + insets.bottom,
+            paddingBottom: (canPlay ? 244 : 40) + insets.bottom,
           }}
         >
           {discards.length > 0 ? (
@@ -145,6 +153,18 @@ export default function SelectScreen() {
                 Face down on the table. No taking it back.
               </Text>
             </View>
+          ) : !myTurn ? (
+            <View style={{ alignItems: 'center', gap: 10 }}>
+              <Text
+                style={{ fontFamily: F.display, fontSize: 30, lineHeight: 32, letterSpacing: 3, color: C.creamPale, textAlign: 'center' }}
+              >
+                {`${SIDE_WORD[theirSide]} SIDE PLACES FIRST`}
+              </Text>
+              <StatusLine tone="dim" text={`WAITING FOR ${nameOf(state, opp).toUpperCase()}`} />
+              <Text style={{ fontFamily: F.italic, fontSize: 12.5, color: C.muted4, textAlign: 'center' }}>
+                Their card goes down face first. You will not see it.
+              </Text>
+            </View>
           ) : settings.matchupHints ? (
             <View style={{ alignItems: 'center', gap: 4 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -163,7 +183,7 @@ export default function SelectScreen() {
       </View>
 
       <Fade
-        visible={sel >= 0 && !iAmLocked}
+        visible={sel >= 0 && canPlay}
         duration={250}
         style={{
           position: 'absolute',
@@ -190,7 +210,7 @@ export default function SelectScreen() {
         </Text>
       </Fade>
 
-      {iAmLocked ? null : (
+      {canPlay ? (
         <View style={{ position: 'absolute', left: 14, right: 14, bottom: 6 + insets.bottom, height: 218 }}>
           {myHand.map((c, i) => (
             <FanCard
@@ -203,7 +223,7 @@ export default function SelectScreen() {
             />
           ))}
         </View>
-      )}
+      ) : null}
 
       <LinearGradient
         pointerEvents="none"

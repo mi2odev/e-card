@@ -10,7 +10,7 @@ import { Chip, Fade, OutlineButton, useBreathe } from '../src/ui/kit';
 import { FlipCard } from '../src/ui/Cards';
 import { Glow, TableBackground } from '../src/ui/Radial';
 import { RevealStep, nameOf, otherSide, useGame } from '../src/store/useGame';
-import { SIDE_WORD, fmt, sideOfPlayer } from '../src/game/logic';
+import { PLAYS_PER_GAME, SIDE_WORD, fmt, sideOfPlayer } from '../src/game/logic';
 import { netAdvance } from '../src/net/actions';
 import { draw as drawBuzz, tapHeavy, upset, win } from '../src/haptics';
 
@@ -79,20 +79,34 @@ export default function RevealScreen() {
   const glowFade = useAnimatedStyle(() => ({ opacity: glowOpacity.value }));
   const glowBreathe = useBreathe(2400);
 
-  const bannerText = result ? (result.draw ? 'DRAW' : `${nameOf(state, result.winner).toUpperCase()} WINS`) : '';
-  const payoutText = !result
+  // A drawn third play ends the round outright — nobody takes it and no money moves.
+  const spent = !!result && result.draw && result.final;
+  const roundOver = !result || !result.draw || result.final;
+
+  const bannerText = !result
     ? ''
     : result.draw
+      ? spent
+        ? 'NO DECISION'
+        : 'DRAW'
+      : `${nameOf(state, result.winner).toUpperCase()} WINS`;
+  const payoutText = !result
+    ? ''
+    : spent
       ? stakesOn
-        ? 'BOTH CITIZENS DISCARDED · THE STAKE RIDES ON'
-        : 'BOTH CITIZENS DISCARDED — PLAY ON'
-      : stakesOn
-        ? `STAKE ${fmt(stake)} \u00d7 ${result.mult} — COLLECTS ${fmt(result.paid)} PTS${result.capped ? ' · CLEANED OUT!' : ''}`
-        : result.winSide === 'slv'
-          ? 'THE 5\u00d7 UPSET'
-          : 'GAME TO THE EMPEROR SIDE';
+        ? 'THREE PLAYS SPENT · THE WAGER GOES BACK'
+        : 'THREE PLAYS SPENT · THE ROUND GOES TO NEITHER'
+      : result.draw
+        ? stakesOn
+          ? 'BOTH CITIZENS DISCARDED · THE STAKE RIDES ON'
+          : 'BOTH CITIZENS DISCARDED — PLAY ON'
+        : stakesOn
+          ? `STAKE ${fmt(stake)} \u00d7 ${result.mult} — COLLECTS ${fmt(result.paid)} PTS${result.capped ? ' · CLEANED OUT!' : ''}`
+          : result.winSide === 'slv'
+            ? 'THE 5\u00d7 UPSET'
+            : 'ROUND TO THE EMPEROR SIDE';
 
-  const continueLabel = result?.draw ? 'CONTINUE THE DUEL' : game >= 12 ? 'FINAL TALLY' : 'TO THE SCOREBOARD';
+  const continueLabel = !roundOver ? 'CONTINUE THE ROUND' : game >= 12 ? 'FINAL TALLY' : 'TO THE SCOREBOARD';
 
   return (
     <View style={{ flex: 1, backgroundColor: C.tableEdge }}>
@@ -106,7 +120,10 @@ export default function RevealScreen() {
           paddingBottom: 20 + insets.bottom,
         }}
       >
-        <Chip label={`GAME ${game} OF 12 · TURN ${turn}`} style={{ paddingVertical: 6, paddingHorizontal: 14 }} />
+        <Chip
+          label={`ROUND ${game} OF 12 · PLAY ${turn} OF ${PLAYS_PER_GAME}`}
+          style={{ paddingVertical: 6, paddingHorizontal: 14 }}
+        />
 
         <Pressable
           onPress={onZoneTap}

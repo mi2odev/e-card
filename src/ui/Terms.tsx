@@ -64,7 +64,7 @@ export function SidePanel({
       </View>
 
       <Text style={{ fontFamily: F.body, fontSize: 9.5, letterSpacing: 1.5, color: C.muted7, marginTop: 9 }}>
-        SIDES SWAP EVERY 3 GAMES — BOTH WILL HOLD EACH SIDE TWICE
+        SIDES SWAP EVERY 3 ROUNDS — EACH PLAYER HOLDS EACH SIDE SIX TIMES
       </Text>
     </View>
   );

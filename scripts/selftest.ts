@@ -80,7 +80,7 @@ async function testRules() {
   eq(new Set([...hands.emp, ...hands.slv].map((c) => c.id)).size, 10, 'every card id is unique');
 
   const banks = { p1: 100, p2: 100 };
-  const base = { resolvedStart: 'emperor' as const, game: 1, stake: 20, stakesOn: true, banks };
+  const base = { resolvedStart: 'emperor' as const, game: 1, turn: 1, stake: 20, stakesOn: true, banks };
   eq(resolveTurn({ ...base, empCard: 'C', slvCard: 'C' }).draw, true, 'citizen v citizen draws');
   const empWin = resolveTurn({ ...base, empCard: 'E', slvCard: 'C' });
   eq(empWin.draw === false && [empWin.winner, empWin.paid], ['p1', 20], 'emperor beats citizen for 1x');
@@ -106,6 +106,110 @@ async function testRules() {
   eq(clampStake(1, 100, 25), 25, 'stake clamps up to the minimum');
   eq([50, 500, 2000, 5000].map(stakeStep), [5, 10, 25, 100], 'nudge size scales with the purse');
   eq(payoutPreview(20, { p1: 100, p2: 30 }, 'p1'), { emperor: 20, slave: 100 }, 'payout preview caps at the loser bankroll');
+}
+
+/* ------------------------------------------- the anime's round and turn shape */
+
+async function testAnimeShape() {
+  console.log('\nRound shape and placing order');
+  const { PLAYS_PER_GAME, firstPlacer, isFinalPlay, resolveTurn, emperorPlayer } = await import('../src/game/logic.ts');
+
+  eq(PLAYS_PER_GAME, 3, 'a round is three plays');
+  eq([1, 2, 3].map(isFinalPlay), [false, false, true], 'only the third play ends the round outright');
+
+  // Round 1 opens with the Emperor side; the opener alternates every play and
+  // again at the top of each round.
+  eq([1, 2, 3].map((t) => firstPlacer(1, t)), ['emp', 'slv', 'emp'], 'round 1 places E, S, E');
+  eq([1, 2, 3].map((t) => firstPlacer(2, t)), ['slv', 'emp', 'slv'], 'round 2 opens with the Slave side');
+  eq([1, 2, 3].map((t) => firstPlacer(3, t)), ['emp', 'slv', 'emp'], 'round 3 opens with the Emperor side again');
+  eq(
+    Array.from({ length: 12 }, (_, i) => firstPlacer(i + 1, 1)),
+    ['emp', 'slv', 'emp', 'slv', 'emp', 'slv', 'emp', 'slv', 'emp', 'slv', 'emp', 'slv'],
+    'the round opener alternates across all twelve rounds',
+  );
+
+  const banks = { p1: 100, p2: 100 };
+  const base = { resolvedStart: 'emperor' as const, game: 1, stake: 20, stakesOn: true, banks };
+  const early = resolveTurn({ ...base, turn: 1, empCard: 'C', slvCard: 'C' });
+  eq(early.draw === true && early.final, false, 'a drawn first play keeps the round alive');
+  const last = resolveTurn({ ...base, turn: 3, empCard: 'C', slvCard: 'C' });
+  eq(last.draw === true && last.final, true, 'a drawn third play spends the round');
+
+  // Each side holds 6 rounds of each role across the match.
+  const empRounds = Array.from({ length: 12 }, (_, i) => emperorPlayer('emperor', i + 1));
+  eq(empRounds.filter((p) => p === 'p1').length, 6, 'each player holds the Emperor side six times');
+}
+
+/* ------------------------------------------ a round played out in the store */
+
+async function testRoundPlay() {
+  console.log('\nPlaying a round');
+  const { useGame } = await import('../src/store/useGame.ts?device=c');
+  const { firstPlacer } = await import('../src/game/logic.ts?device=c');
+
+  const g = () => useGame.getState();
+  const citizen = (side: 'emp' | 'slv') => g().hands![side].findIndex((c) => c.t === 'C');
+  const special = (side: 'emp' | 'slv') => g().hands![side].findIndex((c) => c.t !== 'C');
+  /** Stand in for the reveal animation finishing, then move the match on. */
+  const finish = () => {
+    useGame.setState({ rev: 4 });
+    return g().continueReveal();
+  };
+
+  g().setStartingBankroll(100);
+  g().setMinStake(0);
+  g().beginMatch();
+  g().deal();
+
+  // --- the placing order is enforced, not merely displayed
+  eq(g().picker, firstPlacer(1, 1), 'round 1 play 1 opens with the Emperor side');
+  eq(g().submitPick('slv', citizen('slv')), 'noop', 'the answering side cannot place out of turn');
+  eq(g().picks.slv, null, 'the out-of-turn card stays in hand');
+  eq(g().submitPick('emp', citizen('emp')), 'waiting', 'the opening side places');
+  eq(g().picker, 'slv', 'the turn passes to the answering side');
+  eq(g().submitPick('emp', citizen('emp')), 'noop', 'the opener cannot place twice');
+  eq(g().submitPick('slv', citizen('slv')), 'reveal', 'the answer resolves the play');
+
+  // --- a drawn play does not end the round, and the opener flips
+  const drawn = g().result;
+  eq(drawn?.draw === true && drawn.final, false, 'a drawn first play leaves the round open');
+  eq(finish(), 'handoff', 'a drawn play sends the device on rather than ending the round');
+  eq(g().turn, 2, 'the round moves to its second play');
+  eq(g().picker, firstPlacer(1, 2), 'the Slave side opens play 2');
+  eq(g().hands!.emp.length, 4, 'the drawn cards are gone from hand');
+
+  // --- second draw
+  g().submitPick('slv', citizen('slv'));
+  g().submitPick('emp', citizen('emp'));
+  eq(g().result?.draw, true, 'play 2 is drawn too');
+  finish();
+  eq(g().turn, 3, 'the round moves to its third play');
+  eq(g().picker, firstPlacer(1, 3), 'the Emperor side opens play 3');
+
+  // --- third draw spends the round: nobody wins, no money moves
+  const banksBefore = [g().p1pts, g().p2pts];
+  g().submitPick('emp', citizen('emp'));
+  g().submitPick('slv', citizen('slv'));
+  const spent = g().result;
+  eq(spent?.draw === true && spent.final, true, 'a drawn third play spends the round');
+  eq(finish(), 'scoreboard', 'the spent round is over, not continued');
+  eq([g().p1pts, g().p2pts], banksBefore, 'a spent round moves no money');
+  eq([g().p1w, g().p2w], [0, 0], 'a spent round is a win for neither');
+  eq(g().history, [{ g: 1, winner: null, winSide: null, paid: 0 }], 'the spent round is still on the record');
+  eq(g().game, 2, 'the match moves to round 2');
+  eq(g().hands!.emp.length, 2, 'two of the five cards were never revealed');
+
+  // --- a decisive play ends the round at once, whatever the play number
+  g().deal();
+  eq(g().picker, firstPlacer(2, 1), 'round 2 opens with the Slave side');
+  g().submitPick('slv', citizen('slv'));
+  g().submitPick('emp', special('emp'));
+  const decisive = g().result;
+  eq(decisive?.draw, false, 'Emperor against Citizen is decisive');
+  eq(decisive?.draw === false && decisive.winSide, 'emp', 'the Emperor side takes it');
+  finish();
+  eq(g().game, 3, 'a decided round ends immediately');
+  eq(g().history.length, 2, 'both rounds are recorded');
 }
 
 /* --------------------------------------------------------------- protocol */
@@ -361,9 +465,18 @@ async function testOnlineMatch() {
     eq(guest().hands!.emp.every(B.snapshot.isHidden), true, 'the guest never receives the host hand');
     eq(guest().hands!.slv.map((c) => c.t).sort().join(''), 'CCCCS', 'the guest holds a real Slave hand');
 
-    // Host plays the Emperor; guest plays its Slave — the 5x upset.
+    // Round 1 opens with the Emperor side, which the host holds — the guest has
+    // to wait its turn even though its own hand is right there on screen.
+    eq(guest().picker, 'emp', 'the guest is told the Emperor side places first');
+    B.actions.netPick(guest().hands!.slv.findIndex((c) => c.t === 'S'));
+    await sleep(200);
+    eq(host().picks.slv, null, 'a card played out of turn is refused over the wire');
+    eq(guest().picks.slv, null, 'and the guest still holds it');
+
+    // Host plays the Emperor; guest answers with its Slave — the 5x upset.
     A.actions.netPick(hostHand.emp.findIndex((c) => c.t === 'E'));
     await until(() => guest().picks.emp !== null, 'the guest is told the host has locked in');
+    await until(() => guest().picker === 'slv', 'and that it is now the guest turn to answer');
     eq(B.snapshot.isHidden(guest().picks.emp), true, 'but not which card it was');
 
     B.actions.netPick(guest().hands!.slv.findIndex((c) => c.t === 'S'));
@@ -403,6 +516,8 @@ async function testOnlineMatch() {
 
 console.log('E-CARD self-test');
 await testRules();
+await testAnimeShape();
+await testRoundPlay();
 await testProtocol();
 await testWire();
 await testDirectHost();
