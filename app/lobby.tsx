@@ -123,7 +123,7 @@ export default function LobbyScreen() {
         >
           <Seat label="THIS PHONE" name={nameOf(state, me)} side="emp" present />
           <Seat
-            label="THE CHALLENGER"
+            label={isHost ? 'THE CHALLENGER' : 'WHO OPENED THE TABLE'}
             name={net.peerHere ? nameOf(state, them) : 'EMPTY SEAT'}
             side="slv"
             present={net.peerHere}
@@ -136,7 +136,11 @@ export default function LobbyScreen() {
           editable={isHost}
           heading={
             <>
-              FIRST DEAL — <Text style={{ color: C.goldText }}>{nameOf(state, 'p1').toUpperCase()}</Text> PLAYS AS
+              FIRST DEAL —{' '}
+              <Text style={{ color: C.goldText }}>
+                {(net.peerHere || isHost ? nameOf(state, 'p1') : 'THE HOST').toUpperCase()}
+              </Text>{' '}
+              PLAYS AS
             </>
           }
         />

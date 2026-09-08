@@ -95,6 +95,15 @@ function onMessage(role: 'host' | 'guest', msg: NetMessage): void {
 
   switch (msg.t) {
     case 'peer':
+      if (msg.state === 'alone') {
+        // The relay pairs by room code, so an empty room means the two phones do
+        // not agree on it. Say so, rather than sitting on a silent "waiting".
+        net.patch({
+          status: 'waiting',
+          detail: `NO TABLE OPEN ON CODE ${net.code} — CHECK THE FOUR CHARACTERS, AND THAT THE OTHER PHONE HAS PRESSED "OPEN THE TABLE"`,
+        });
+        break;
+      }
       if (msg.state === 'joined') {
         net.patch({ peerHere: true, status: 'connected', detail: '' });
         // Both ends announce themselves; whoever is already up answers.
