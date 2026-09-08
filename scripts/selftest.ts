@@ -515,6 +515,98 @@ async function testOnlineMatch() {
   }
 }
 
+/* ------------------------------------------------ a table on a phone's hotspot */
+
+/**
+ * No router: one phone shares its connection and serves the table on the little
+ * network that makes. The host cannot read its own address off that interface,
+ * and nobody types one — the guest works out where the host has to be and dials
+ * every candidate at once.
+ */
+async function testHotspot() {
+  console.log('\nA table on a phone hotspot');
+  const { hotspotTargets, HOTSPOT_GATEWAYS } = await import('../src/net/discover.ts');
+
+  eq(hotspotTargets('172.20.10.4')[0], '172.20.10.1', 'an iPhone hotspot guest looks at the gateway first');
+  eq(hotspotTargets('192.168.43.132')[0], '192.168.43.1', 'and so does an Android one');
+  eq(hotspotTargets('10.0.1.77')[0], '10.0.1.1', 'whatever range the phone handed out');
+  eq(hotspotTargets(''), HOTSPOT_GATEWAYS, 'a phone that cannot say where it is falls back to the usual ones');
+  check(
+    !hotspotTargets('192.168.43.1').includes('192.168.43.1'),
+    'and never dials itself',
+    hotspotTargets('192.168.43.1'),
+  );
+
+  const nodeNet = await import('node:net');
+  const { attachHostConnection } = await import('../src/net/ws/hostServer.ts');
+  const { firstAnswering } = await import('../src/net/wifi.ts');
+  const port = PORT + 12;
+
+  // Stand in for the sharing phone: the same one-room server it runs.
+  const server = nodeNet.createServer((sock) => {
+    let conn: { send: (t: string) => void } | null = null;
+    attachHostConnection(
+      {
+        write: (b) => sock.write(Buffer.from(b)),
+        destroy: () => sock.destroy(),
+        onData: (cb) => sock.on('data', (d) => cb(new Uint8Array(d))),
+        onClose: (cb) => sock.on('close', cb),
+        onError: (cb) => sock.on('error', cb),
+      },
+      ROOM,
+      {
+        onOpen: (c) => {
+          conn = c;
+        },
+        onText: (t) => {
+          if (JSON.parse(t).t === 'hello') conn?.send(JSON.stringify({ t: 'welcome', v: 1, name: 'Kaiji' }));
+        },
+        onClose: () => {},
+      },
+    );
+  });
+  await new Promise<void>((r) => server.listen(port, '127.0.0.1', r));
+
+  try {
+    // 127.0.0.2 is a real address that refuses the connection — the wrong guess
+    // a phone always makes at least one of.
+    const found = await firstAnswering(['127.0.0.2', '127.0.0.1'], port, ROOM, 4000);
+    eq(found?.address, '127.0.0.1', 'the search keeps the address that answers');
+    found?.socket.close();
+
+    const wrongRoom = await firstAnswering(['127.0.0.1'], port, 'ZZZZ', 2500);
+    check(wrongRoom === null, 'something listening on the wrong room code is not our table');
+
+    const G = {
+      session: await import('../src/net/session.ts?device=hs'),
+      game: await import('../src/store/useGame.ts?device=hs'),
+      net: await import('../src/store/useNet.ts?device=hs'),
+    };
+    await G.session.startSession({
+      kind: 'wifi',
+      role: 'guest',
+      hotspot: true,
+      code: ROOM,
+      address: '127.0.0.1',
+      port,
+      name: 'Tonegawa',
+    });
+    await until(() => G.net.useNet.getState().status === 'connected', 'a hotspot guest sits down with nothing typed');
+    eq(G.net.useNet.getState().info?.mode, 'hotspot', 'and the lobby is told what kind of table it is');
+    check(
+      (G.net.useNet.getState().info?.hint ?? '').includes('127.0.0.1'),
+      'naming where it found the phone that is sharing',
+      G.net.useNet.getState().info?.hint,
+    );
+    await until(() => G.game.useGame.getState().p1 === 'Kaiji', 'and the table introduces itself');
+
+    G.session.stopSession();
+    await sleep(150);
+  } finally {
+    server.close();
+  }
+}
+
 /* ------------------------------------------------ coming back to the table */
 
 /**
@@ -832,6 +924,7 @@ await testWire();
 await testDirectHost();
 await testRedaction();
 await testOnlineMatch();
+await testHotspot();
 await testComingBack();
 await testGoneQuiet();
 await testWarmSeat();

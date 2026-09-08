@@ -112,11 +112,27 @@ export default function LobbyScreen() {
               label={
                 net.info.mode === 'direct'
                   ? `SERVED BY THIS PHONE · ${net.info.hint}`
-                  : net.info.mode === 'bluetooth'
+                  : net.info.mode === 'bluetooth' || net.info.mode === 'hotspot'
                     ? net.info.hint
                     : `VIA RELAY ${net.info.hint}`
               }
             />
+          ) : null}
+
+          {isHost && net.info?.mode === 'hotspot' ? (
+            <Text
+              style={{
+                fontFamily: F.body,
+                fontSize: 9,
+                letterSpacing: 1.2,
+                color: C.muted7,
+                marginTop: 8,
+                textAlign: 'center',
+                lineHeight: 13,
+              }}
+            >
+              THE OTHER PHONE JOINS THIS HOTSPOT, ENTERS THE CODE, AND FINDS THIS TABLE BY ITSELF
+            </Text>
           ) : null}
 
           {isHost && net.info?.mode === 'relay' ? (

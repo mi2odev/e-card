@@ -1,7 +1,7 @@
 # E-Card
 
 Two-player bluffing card game. Play it pass & play on one phone, or on **two phones**
-over Wi-Fi. Expo SDK 54 · TypeScript · expo-router · Reanimated · zustand.
+over Wi-Fi — including a Wi-Fi one of the phones makes itself. Expo SDK 54 · TypeScript · expo-router · Reanimated · zustand.
 
 ## Run it
 
@@ -108,6 +108,35 @@ but the code.
 In any build that is not Expo Go, `react-native-tcp-socket` is live and the host phone
 serves the room itself — the relay is not needed at all. See **Building it as a real app**
 above. The app detects this and switches automatically; the lobby says which mode you got.
+
+### Hotspot — no router, no network to join
+
+**TWO PHONES → WI-FI → HOTSPOT.** One phone shares its connection, the other joins that
+network, and the table is served over it. No router, no computer, no relay — and nothing
+to type but the four-character code.
+
+1. Phone A turns on **Personal Hotspot** (iPhone) or **Mobile Hotspot** (Android).
+2. Phone B joins that network in Wi-Fi settings. If it asks about staying connected
+   without internet, say yes.
+3. Phone A: **OPEN → WI-FI → HOTSPOT**, and reads out the code.
+4. Phone B: **JOIN → WI-FI → HOTSPOT**, types the code, and presses join.
+
+**The phone sharing the hotspot is the one that opens the table** — and it needs the built
+app, since serving means opening a port. The phone joining can stay on Expo Go.
+
+There is no address field because neither phone could fill one in. A phone that is *sharing*
+a hotspot cannot read its own address off that interface: both platforms report the Wi-Fi
+address of a network you have **joined**, which is exactly the interface a hotspot host is
+not using. So the guest works it out instead. The phone handing out addresses is the
+gateway of the network it made, so the guest takes its own address (`172.20.10.4`, say) and
+dials the gateway (`172.20.10.1`), along with the addresses iOS, Android and Windows hand
+out by convention — all at once, keeping whichever answers. A table turns away the wrong
+room code during the handshake, so anything that answers *is* the table.
+
+If nothing answers, the app says which address it tried. Usually the phones are not
+actually on the same hotspot, or the sharing phone has not pressed **OPEN THE TABLE** yet.
+Some Androids will not turn a hotspot on without mobile data, even though the game needs
+none of it.
 
 ### Building it as a real app — one phone hosts, no computer
 
@@ -238,7 +267,8 @@ snapshot.ts    per-recipient redaction — the guarantee that a hand stays secre
 session.ts     host authority: broadcast snapshots, apply guest intents, and get a dropped link back
 actions.ts     what screens call; host acts, guest asks
 link.ts        the Link / TransportDriver interfaces
-wifi.ts        direct-host or relay, both plain WebSocket
+wifi.ts        direct-host, relay, or a table on one phone's hotspot — all plain WebSocket
+discover.ts    the little that can be guessed about where the other phone is
 bluetooth.ts   phone-to-phone over Nearby Connections / MultipeerConnectivity
 ws/            frames.ts (RFC 6455 codec), hostServer.ts, tcpHost.ts
 ```

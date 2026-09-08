@@ -11,7 +11,7 @@ export type LinkEvents = {
 
 /** How this link ended up working, so the lobby can tell the players what to do. */
 export type LinkInfo = {
-  mode: 'direct' | 'relay' | 'bluetooth';
+  mode: 'direct' | 'relay' | 'bluetooth' | 'hotspot';
   /** Short line shown under the room code, e.g. the address to type in. */
   hint: string;
 };
@@ -22,8 +22,14 @@ export type Link = {
   info: LinkInfo;
 };
 
-export type HostOptions = { code: string; address: string; port: number };
-export type JoinOptions = { code: string; address: string; port: number };
+/**
+ * `hotspot` says the table lives on a phone that is sharing its connection
+ * rather than on a network both phones joined. Nothing about the link changes —
+ * it is the same Wi-Fi socket — but the host has no address it can read off
+ * itself, and the guest has to work out where the host is instead of being told.
+ */
+export type HostOptions = { code: string; address: string; port: number; hotspot?: boolean };
+export type JoinOptions = { code: string; address: string; port: number; hotspot?: boolean };
 
 export type Availability = { ok: boolean; reason?: string };
 
