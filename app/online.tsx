@@ -27,6 +27,9 @@ export default function OnlineScreen() {
 
   const [role, setRole] = useState<Role>('host');
   const [kind, setKind] = useState<TransportKind>('wifi');
+  // Wi-Fi, but on a network one of the two phones is making rather than one they
+  // both joined. Nothing is typed: the guest works out where the host must be.
+  const [hotspot, setHotspot] = useState(false);
   const [code, setCode] = useState(() => makeRoomCode());
   const [address, setAddress] = useState('');
   const [reason, setReason] = useState('');
@@ -56,14 +59,24 @@ export default function OnlineScreen() {
   }, [kind]);
 
   const wifi = kind === 'wifi';
+  const onHotspot = wifi && hotspot;
   // This build can serve the table from the phone itself — no computer needed,
   // and no relay address to type. The other phone dials this one directly.
-  const directHost = wifi && role === 'host' && wifiHostsItself();
-  const needsAddress = wifi && !directHost;
+  const canServe = wifiHostsItself();
+  const directHost = wifi && role === 'host' && canServe;
+  // A hotspot table is always served by the phone sharing, and always found by
+  // the other one, so there is never an address to type on either side.
+  const needsAddress = wifi && !onHotspot && !directHost;
   const ready = useMemo(
     () => isCompleteRoomCode(code) && (!needsAddress || address.trim().length > 0) && !busy,
     [code, needsAddress, address, busy],
   );
+
+  /** What to hand the driver: a hotspot guest is given nothing and goes looking. */
+  const dialAddress = () => {
+    if (onHotspot) return role === 'host' ? ownIp : '';
+    return directHost ? ownIp : address.trim();
+  };
 
   /** Take the seat that was left, on the same table, with the match as it stood. */
   const back = async () => {
@@ -91,7 +104,8 @@ export default function OnlineScreen() {
         code: normalizeRoomCode(code),
         // Hosting directly, the address is this phone's own — it is what the
         // other player types, so it has to travel with the session for display.
-        address: directHost ? ownIp : address.trim(),
+        address: dialAddress(),
+        hotspot: onHotspot,
         port: DEFAULT_PORT,
         name: p1.trim() || (role === 'host' ? 'Host' : 'Challenger'),
       });
@@ -224,6 +238,21 @@ export default function OnlineScreen() {
               { value: 'bluetooth', label: DRIVERS.bluetooth.label, caption: DRIVERS.bluetooth.blurb },
             ]}
           />
+          {wifi ? (
+            <>
+              <Text style={{ fontFamily: F.semi, fontSize: 10, letterSpacing: 2, color: C.muted2, marginTop: 18, marginBottom: 8 }}>
+                HOW THEY FIND EACH OTHER
+              </Text>
+              <Segmented
+                value={hotspot ? 'hotspot' : 'network'}
+                onChange={(v) => setHotspot(v === 'hotspot')}
+                options={[
+                  { value: 'network', label: 'NETWORK', caption: 'BOTH ON ONE WI-FI' },
+                  { value: 'hotspot', label: 'HOTSPOT', caption: 'A PHONE MAKES IT' },
+                ]}
+              />
+            </>
+          ) : null}
           {reason ? <StatusLine tone="rust" text={reason} style={{ marginTop: 10 }} /> : null}
           {error ? <StatusLine tone="rust" text={error} style={{ marginTop: 10 }} /> : null}
 
@@ -240,7 +269,40 @@ export default function OnlineScreen() {
             onChangeText={(v) => setCode(normalizeRoomCode(v))}
           />
 
-          {directHost ? (
+          {onHotspot ? (
+            <View
+              style={{
+                marginTop: 18,
+                paddingVertical: 14,
+                paddingHorizontal: 16,
+                borderRadius: 12,
+                backgroundColor: 'rgba(0,0,0,0.3)',
+                borderWidth: 1,
+                borderColor: C.hairline,
+                gap: 7,
+              }}
+            >
+              <Text style={{ fontFamily: F.semi, fontSize: 10, letterSpacing: 2, color: C.muted2 }}>
+                {role === 'host' ? 'THIS PHONE MAKES THE WI-FI' : 'JOIN THE OTHER PHONE FIRST'}
+              </Text>
+              <Text style={{ fontFamily: F.body, fontSize: 9.5, letterSpacing: 1.2, color: C.creamMute, lineHeight: 15 }}>
+                {role === 'host'
+                  ? 'TURN ON PERSONAL HOTSPOT (IPHONE) OR MOBILE HOTSPOT (ANDROID), HAVE THE OTHER PLAYER JOIN THAT NETWORK, THEN OPEN THE TABLE AND READ OUT THE CODE.'
+                  : "IN WI-FI SETTINGS, JOIN THE NETWORK THE OTHER PHONE IS SHARING. THEN ENTER THE CODE — THIS PHONE GOES LOOKING FOR THE TABLE ON ITS OWN."}
+              </Text>
+              <Text style={{ fontFamily: F.body, fontSize: 9, letterSpacing: 1.2, color: C.muted7, lineHeight: 13 }}>
+                NO ROUTER, NO COMPUTER, NO ADDRESS TO TYPE. THE PHONE SHARING THE HOTSPOT IS THE ONE THAT OPENS THE TABLE.
+              </Text>
+              {role === 'host' && !canServe ? (
+                <Text style={{ fontFamily: F.bold, fontSize: 9, letterSpacing: 1.2, color: C.rustText, lineHeight: 13 }}>
+                  THIS COPY RUNS INSIDE EXPO GO, WHICH IS NOT ALLOWED TO OPEN A PORT — SO IT CANNOT SERVE THE TABLE. THE
+                  PHONE SHARING THE HOTSPOT NEEDS THE BUILT APP; THE OTHER ONE CAN STAY ON EXPO GO.
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
+
+          {directHost && !onHotspot ? (
             <View
               style={{
                 marginTop: 18,

@@ -97,6 +97,8 @@ export type StartOptions = {
   address?: string;
   port?: number;
   name: string;
+  /** Wi-Fi tables only: the host phone is the one sharing the network — see ./wifi. */
+  hotspot?: boolean;
 };
 
 export const isLive = () => link !== null;
@@ -396,7 +398,12 @@ function stopHeartbeat(): void {
 /** Build the pipe for `opts` and hand it to the session. Used to start and to redial. */
 async function openLink(opts: StartOptions): Promise<void> {
   const driver = DRIVERS[opts.kind];
-  const where = { code: opts.code, address: opts.address ?? '', port: opts.port ?? DEFAULT_PORT };
+  const where = {
+    code: opts.code,
+    address: opts.address ?? '',
+    port: opts.port ?? DEFAULT_PORT,
+    hotspot: opts.hotspot === true,
+  };
   const events = {
     onStatus: (status: LinkStatus, detail?: string) => onStatus(opts.role, status, detail),
     onMessage: (m: NetMessage) => onMessage(opts.role, m),

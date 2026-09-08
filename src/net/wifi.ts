@@ -9,36 +9,35 @@
  *            server on the same Wi-Fi pairs the two by room code. This is the
  *            path that works inside Expo Go, where an app cannot open a port.
  *            Run it with `npm run relay` (see server/relay.js).
+ *
+ * `hotspot` tables are the same sockets over a network one of the phones is
+ * making itself. There is no router and nothing to type: the phone sharing the
+ * connection serves the table directly, and the guest finds it by dialling the
+ * handful of addresses a hotspot gateway can have (see ./discover).
  */
 
 import { decode, encode, type NetMessage } from './protocol';
 import { deadLink, type Availability, type HostOptions, type JoinOptions, type Link, type LinkEvents, type TransportDriver } from './link';
 import { errorText, startTcpHost, tcpHostAvailable, type TcpHostHandle } from './ws/tcpHost';
 import type { Connection } from './ws/hostServer';
+import { hotspotTargets, localIpAddress } from './discover';
 
 const url = (address: string, port: number, code: string, role: 'host' | 'guest') =>
   `ws://${address}:${port}/?room=${encodeURIComponent(code)}&role=${role}`;
 
-/** A WebSocket client link — used by the guest always, and by the host in relay mode. */
-function clientLink(
-  target: string,
+/** Wire a socket — open or still dialling — into a link the session can use. */
+function socketLink(
+  opened: WebSocket,
   ev: LinkEvents,
   info: Link['info'],
   unreachable: string,
-  onOpen?: (send: (m: NetMessage) => void) => void,
-): Link {
-  let socket: WebSocket | null = null;
-  let closedByUs = false;
   // A socket that never opened was never a table. Saying "the other phone left"
   // in that case sends people hunting for the wrong problem entirely.
-  let everOpen = false;
-
-  try {
-    socket = new WebSocket(target);
-  } catch (e) {
-    ev.onStatus('error', errorText(e));
-    return deadLink;
-  }
+  everOpen: boolean,
+  onOpen?: () => void,
+): Link {
+  let socket: WebSocket | null = opened;
+  let closedByUs = false;
 
   const send = (msg: NetMessage) => {
     if (socket && socket.readyState === 1) socket.send(encode(msg));
@@ -50,7 +49,7 @@ function clientLink(
 
   socket.onopen = () => {
     everOpen = true;
-    onOpen?.(send);
+    onOpen?.();
   };
   socket.onmessage = (e: { data: unknown }) => {
     const msg = decode(String(e.data));
@@ -83,6 +82,88 @@ function clientLink(
   };
 }
 
+/** A WebSocket client link — used by the guest always, and by the host in relay mode. */
+function clientLink(
+  target: string,
+  ev: LinkEvents,
+  info: Link['info'],
+  unreachable: string,
+  onOpen?: () => void,
+): Link {
+  let socket: WebSocket;
+  try {
+    socket = new WebSocket(target);
+  } catch (e) {
+    ev.onStatus('error', errorText(e));
+    return deadLink;
+  }
+  return socketLink(socket, ev, info, unreachable, false, onOpen);
+}
+
+export type Answer = { socket: WebSocket; address: string };
+
+/** How long the search for a phone sharing a hotspot is given before it reports back. */
+const SEARCH_MS = 6000;
+
+/**
+ * Dial every candidate address at once and keep the first that answers, closing
+ * the rest.
+ *
+ * A table turns away the wrong room code during the handshake, so a socket that
+ * opens is the table being looked for — not merely something else listening on
+ * the port.
+ */
+export function firstAnswering(
+  addresses: string[],
+  port: number,
+  code: string,
+  timeoutMs = SEARCH_MS,
+): Promise<Answer | null> {
+  return new Promise((resolve) => {
+    const dialled: WebSocket[] = [];
+    let settled = false;
+    let pending = addresses.length;
+    if (!pending) return resolve(null);
+
+    const finish = (winner: Answer | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      for (const other of dialled) {
+        if (other === winner?.socket) continue;
+        try {
+          other.close();
+        } catch {
+          /* never opened */
+        }
+      }
+      resolve(winner);
+    };
+    const timer = setTimeout(() => finish(null), timeoutMs);
+
+    for (const address of addresses) {
+      let socket: WebSocket;
+      // One address failing outright must not take the whole search with it.
+      let done = false;
+      const gone = () => {
+        if (done || settled) return;
+        done = true;
+        if (--pending === 0) finish(null);
+      };
+      try {
+        socket = new WebSocket(url(address, port, code, 'guest'));
+      } catch {
+        gone();
+        continue;
+      }
+      dialled.push(socket);
+      socket.onopen = () => finish({ socket, address });
+      socket.onerror = gone;
+      socket.onclose = gone;
+    }
+  });
+}
+
 /**
  * How long to give the in-app server to say it is listening before giving up on
  * it. The native module can be installed but inert — inside Expo Go, say — and
@@ -107,6 +188,13 @@ function tryDirectHost(opts: HostOptions, ev: LinkEvents): Promise<Link | null> 
     };
     const timer = setTimeout(giveUp, LISTEN_TIMEOUT_MS);
 
+    // A phone sharing a hotspot cannot read its own address off the interface it
+    // is serving on, and nobody has to type it anyway — so it says what it is
+    // rather than where it is.
+    const info: Link['info'] = opts.hotspot
+      ? { mode: 'hotspot', hint: "SERVED BY THIS PHONE'S HOTSPOT" }
+      : { mode: 'direct', hint: `${opts.address || 'this phone'}:${opts.port}` };
+
     handle = startTcpHost(opts.port, opts.code, {
       onListening: () => {
         if (settled) return;
@@ -115,7 +203,7 @@ function tryDirectHost(opts: HostOptions, ev: LinkEvents): Promise<Link | null> 
         ev.onStatus('waiting');
         resolve({
           send: (msg) => guest?.send(encode(msg)),
-          info: { mode: 'direct', hint: `${opts.address || 'this phone'}:${opts.port}` },
+          info,
           close: (reason) => {
             guest?.close(reason);
             guest = null;
@@ -165,6 +253,13 @@ async function host(opts: HostOptions, ev: LinkEvents): Promise<Link> {
   const direct = await tryDirectHost(opts, ev);
   if (direct) return direct;
 
+  // On a hotspot there is no third machine to fall back to — the network only
+  // exists because this phone is making it, and a relay would have to live on it.
+  if (opts.hotspot) {
+    ev.onStatus('error', CANNOT_SHARE);
+    return deadLink;
+  }
+
   // 2. Otherwise both phones meet at the relay.
   if (!opts.address) {
     ev.onStatus('error', 'THIS BUILD CANNOT HOST BY ITSELF — ENTER THE ADDRESS OF A COMPUTER RUNNING "npm run relay"');
@@ -191,7 +286,44 @@ const noRelay = (address: string, port: number) =>
 const noAnswer = (address: string, port: number) =>
   `NOTHING ANSWERED AT ${address}:${port} — CHECK THE ADDRESS, AND THAT BOTH PHONES ARE ON THE SAME WI-FI`;
 
+const CANNOT_SHARE =
+  'THIS COPY CANNOT SERVE A TABLE — EXPO GO IS NOT ALLOWED TO OPEN A PORT. THE PHONE SHARING THE HOTSPOT NEEDS THE BUILT APP; THE OTHER ONE DOES NOT.';
+
+const noHotspotTable = (tried: string, port: number) =>
+  `NO TABLE ANSWERED ON THE HOTSPOT${tried ? ` AT ${tried}:${port}` : ''} — JOIN THE OTHER PHONE'S HOTSPOT IN WI-FI SETTINGS, AND CHECK IT HAS PRESSED "OPEN THE TABLE"`;
+
+/**
+ * Find the phone that is sharing, and sit down at it.
+ *
+ * Nothing is typed here: the guest is on the host's own little network, and the
+ * phone handing out the addresses is at a gateway address the guest can work out
+ * from its own. Every candidate is dialled at once and the first that answers
+ * with the right room code is the table.
+ */
+async function joinHotspot(opts: JoinOptions, ev: LinkEvents): Promise<Link> {
+  ev.onStatus('connecting', 'LOOKING FOR THE PHONE SHARING THE HOTSPOT');
+
+  const typed = opts.address.trim();
+  const targets = typed ? [typed] : hotspotTargets(await localIpAddress());
+  const found = await firstAnswering(targets, opts.port, opts.code);
+  if (!found) {
+    ev.onStatus('error', noHotspotTable(targets[0] ?? '', opts.port));
+    return deadLink;
+  }
+
+  const link = socketLink(
+    found.socket,
+    ev,
+    { mode: 'hotspot', hint: `FOUND ON THE HOTSPOT AT ${found.address}` },
+    noAnswer(found.address, opts.port),
+    true,
+  );
+  ev.onStatus('connected');
+  return link;
+}
+
 async function join(opts: JoinOptions, ev: LinkEvents): Promise<Link> {
+  if (opts.hotspot) return joinHotspot(opts, ev);
   ev.onStatus('connecting');
   return clientLink(
     url(opts.address, opts.port, opts.code, 'guest'),
@@ -209,7 +341,7 @@ async function availability(): Promise<Availability> {
 export const wifiDriver: TransportDriver = {
   kind: 'wifi',
   label: 'WI-FI',
-  blurb: 'SAME NETWORK · NO INTERNET NEEDED',
+  blurb: 'NEARBY · NO INTERNET NEEDED',
   availability,
   host,
   join,
