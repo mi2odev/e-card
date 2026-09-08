@@ -7,12 +7,15 @@ import { BigButton, GradientText, HistoryStrip, OutlineButton } from '../src/ui/
 import { TableBackground } from '../src/ui/Radial';
 import { bankOf, nameOf, useGame, winsOf } from '../src/store/useGame';
 import { PlayerKey, fmt } from '../src/game/logic';
+import { netRematch } from '../src/net/actions';
+import { stopSession } from '../src/net/session';
 
 export default function EndScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const state = useGame();
-  const { stakesOn, p1pts, p2pts, p1w, p2w, history, game, beginMatch } = state;
+  const { stakesOn, p1pts, p2pts, p1w, p2w, history, game, netRole } = state;
+  const online = netRole !== 'off';
 
   const n1 = nameOf(state, 'p1');
   const n2 = nameOf(state, 'p2');
@@ -104,14 +107,17 @@ export default function EndScreen() {
         <BigButton
           label="REMATCH"
           onPress={() => {
-            beginMatch();
-            router.replace('/scoreboard');
+            netRematch();
+            if (!online) router.replace('/scoreboard');
           }}
           style={{ width: '100%' }}
         />
         <OutlineButton
-          label="BACK TO TITLE"
-          onPress={() => router.replace('/')}
+          label={online ? 'LEAVE THE TABLE' : 'BACK TO TITLE'}
+          onPress={() => {
+            if (online) stopSession('left the table');
+            router.replace('/');
+          }}
           style={{ width: '100%', marginTop: 10 }}
         />
       </ScrollView>

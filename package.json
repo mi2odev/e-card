@@ -10,7 +10,9 @@
     "ios": "expo start --ios",
     "fix": "expo install --fix",
     "doctor": "npx expo-doctor",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "relay": "node server/relay.js",
+    "selftest": "node --experimental-strip-types --no-warnings --import ./scripts/register.mjs scripts/selftest.ts"
   },
   "dependencies": {
     "@expo-google-fonts/barlow": "*",
@@ -39,6 +41,7 @@
   },
   "devDependencies": {
     "@types/react": "~19.1.0",
+    "babel-preset-expo": "~54.0.12",
     "typescript": "~5.9.2"
   }
 }

@@ -68,7 +68,7 @@ export const F = {
 } as const;
 
 // Gold gradient used by E-CARD, GAME n and the match-over title.
-export const GOLD_TEXT_GRADIENT = [C.goldLight, C.gold, C.goldDeep] as const;
-export const GOLD_TEXT_LOCATIONS = [0.08, 0.58, 0.96] as const;
+export const GOLD_TEXT_GRADIENT: readonly [string, string, ...string[]] = [C.goldLight, C.gold, C.goldDeep];
+export const GOLD_TEXT_LOCATIONS: readonly [number, number, ...number[]] = [0.08, 0.58, 0.96];
 
 export const sideColor = (side: 'emp' | 'slv') => (side === 'emp' ? C.goldText : C.rust);

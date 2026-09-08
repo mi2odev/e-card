@@ -11,6 +11,7 @@ import { FlipCard } from '../src/ui/Cards';
 import { Glow, TableBackground } from '../src/ui/Radial';
 import { RevealStep, nameOf, otherSide, useGame } from '../src/store/useGame';
 import { SIDE_WORD, fmt, sideOfPlayer } from '../src/game/logic';
+import { netAdvance } from '../src/net/actions';
 import { draw as drawBuzz, tapHeavy, upset, win } from '../src/haptics';
 
 const CARD_W = 146;
@@ -19,8 +20,9 @@ export default function RevealScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const state = useGame();
-  const { rev, result, picks, resolvedStart, game, turn, stake, stakesOn, settings } = state;
+  const { rev, result, picks, resolvedStart, game, turn, stake, stakesOn, settings, netRole } = state;
   const { setRev, applyResult, skipReveal, continueReveal } = state;
+  const online = netRole !== 'off';
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   const p1Side = sideOfPlayer('p1', resolvedStart, game);
@@ -175,6 +177,11 @@ export default function RevealScreen() {
             padV={17}
             disabled={rev < 4}
             onPress={() => {
+              if (online) {
+                // The host advances the match; both phones follow the phase.
+                netAdvance();
+                return;
+              }
               const next = continueReveal();
               if (next === 'handoff') router.replace('/handoff');
               else if (next === 'scoreboard') router.replace('/scoreboard');

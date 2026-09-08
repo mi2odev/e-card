@@ -36,11 +36,33 @@ spacing, same durations and easing curves, same copy.
 
 ## Designer knobs
 
-The three `data-props` tweaks from the design live in `src/store/useGame.ts` under
-`settings`: `revealDrama` (1.4 s), `startingBankroll` (100), `matchupHints` (true).
-There is no UI for them, same as the design — change the defaults or wire a debug menu.
+The `data-props` tweaks from the design live in `src/store/useGame.ts` under `settings`:
+`revealDrama` (1.4 s), `startingBankroll` (100), `minStake` (0), `matchupHints` (true).
+
+`startingBankroll` and `minStake` now have UI — the stakes panel on **The table is set**
+(and in the online lobby) — because players asked to choose what they are playing for.
+`revealDrama` and `matchupHints` still have none, same as the design.
 
 ## Haptics (expo-haptics)
 
 Selection tick on card raise / stake buttons, medium on commit and I'M READY, heavy on the
 flip, success on an Emperor-side win, error on the 5× Slave upset, warning on a draw.
+
+## Additions beyond the original design
+
+The design covered one phone. Two later features have no mock to be faithful to, so they
+follow its vocabulary rather than a spec:
+
+| Feature | Where | Notes |
+|---|---|---|
+| Stakes panel — purse presets, table minimum, keypad | `src/ui/Terms.tsx` | Same chip and panel language as the side picker; `AmountPad` is a new bottom sheet in the rules-modal idiom (`#0c130e`, gold hairline, `expo-blur` scrim) |
+| Wager controls — scaling ±, MIN/HALF/DOUBLE/¼/ALL IN, live 1× and 5× read-out | `app/scoreboard.tsx` | Replaces the design's fixed −5/+5/+25/ALL IN row. The gold numeral, its size and position are unchanged |
+| Two-phones lobby | `app/online.tsx`, `app/lobby.tsx` | The table code uses the `GAME n` gold gradient at 62 px; seats reuse the scoreboard row |
+| Dropped-link banner | `app/_layout.tsx` | One rust line above everything, only when the link is actually broken |
+
+Online play changes two things about the flow itself:
+
+1. **No handoff screen.** Each phone holds its own hand, so both players choose at the
+   same time; the pass & play sequence (Emperor picks, then Slave) is untouched.
+2. **The Slave side deals.** They are the one naming the wager, so the deal button is
+   theirs; the other phone shows what it is waiting for.

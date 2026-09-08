@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C, F } from '../src/theme';
 import { CARD_ART } from '../src/assets';
 import { CARD_RATIO } from '../src/ui/Cards';
-import { BigButton, GoldHairline, GradientText, HelpButton, NameField, shadow } from '../src/ui/kit';
+import { BigButton, GoldHairline, GradientText, HelpButton, NameField, OutlineButton, shadow } from '../src/ui/kit';
 import { Glow, TableBackground } from '../src/ui/Radial';
 import { useGame } from '../src/store/useGame';
 
@@ -82,6 +82,12 @@ export default function TitleScreen() {
               fontSize={26}
               onPress={() => router.push('/setup')}
               style={{ marginTop: 6 }}
+            />
+            <OutlineButton
+              label="TWO PHONES"
+              fontSize={22}
+              padV={15}
+              onPress={() => router.push('/online')}
             />
             <Text
               style={{

@@ -1,25 +1,38 @@
 import { create } from 'zustand';
 import {
-  Card,
-  Hands,
-  Outcome,
-  PlayerKey,
-  Side,
-  StartSide,
+  type Card,
+  type Hands,
+  type Outcome,
+  type PlayerKey,
+  type Side,
+  type StartSide,
   TOTAL_GAMES,
+  clampStake,
   emperorPlayer,
   freshHands,
+  normalizeBankroll,
+  normalizeMinStake,
   playerOfSide,
   resolveTurn,
+  stakeBounds,
+  stakeStep,
 } from '../game/logic';
 
 export type HistoryEntry = { g: number; winner: PlayerKey; winSide: Side; paid: number };
 export type RevealStep = 0 | 1 | 2 | 3 | 4;
 
+/** Where the match is. Drives navigation on both devices when playing online. */
+export type Phase = 'idle' | 'lobby' | 'scoreboard' | 'select' | 'reveal' | 'end';
+
+/** 'off' = pass & play. 'host' owns the match state; 'guest' mirrors it. */
+export type NetRole = 'off' | 'host' | 'guest';
+
 export type Settings = {
   /** Beat between the cards landing and the flip, in seconds (design default 1.4). */
   revealDrama: number;
   startingBankroll: number;
+  /** Table minimum the Slave side must wager, when they can afford it. */
+  minStake: number;
   matchupHints: boolean;
 };
 
@@ -49,6 +62,10 @@ export type State = {
   history: HistoryEntry[];
   quitArm: boolean;
   settings: Settings;
+  phase: Phase;
+  netRole: NetRole;
+  /** Which player this device controls. Always 'p1' for the host, 'p2' for the guest. */
+  seat: PlayerKey;
 };
 
 type Actions = {
@@ -56,24 +73,38 @@ type Actions = {
   setP2: (v: string) => void;
   toggleStakes: () => void;
   setSideChoice: (v: 'emperor' | 'random' | 'slave') => void;
+  setStartingBankroll: (v: number) => void;
+  setMinStake: (v: number) => void;
   beginMatch: () => void;
   goPre: (game: number) => void;
   deal: () => void;
   tapCard: (i: number) => 'raised' | 'confirm';
   confirmSel: () => 'handoff' | 'reveal' | 'noop';
+  submitPick: (side: Side, index: number) => 'waiting' | 'reveal' | 'noop';
   setRev: (r: RevealStep) => void;
   applyResult: () => void;
   skipReveal: () => boolean;
-  continueReveal: () => 'handoff' | 'scoreboard' | 'end' | 'noop';
+  continueReveal: () => 'handoff' | 'select' | 'scoreboard' | 'end' | 'noop';
   adjStake: (d: number) => void;
+  setStake: (v: number) => void;
   allIn: () => void;
+  minBet: () => void;
+  scaleStake: (factor: number) => void;
   quitTap: () => 'armed' | 'quit';
+  setPhase: (p: Phase) => void;
+  startNet: (role: Exclude<NetRole, 'off'>, seat: PlayerKey) => void;
+  endNet: () => void;
   resetToTitle: () => void;
 };
 
 export type GameStore = State & Actions;
 
-const DEFAULT_SETTINGS: Settings = { revealDrama: 1.4, startingBankroll: 100, matchupHints: true };
+const DEFAULT_SETTINGS: Settings = {
+  revealDrama: 1.4,
+  startingBankroll: 100,
+  minStake: 0,
+  matchupHints: true,
+};
 
 const initial: State = {
   p1: '',
@@ -101,6 +132,9 @@ const initial: State = {
   history: [],
   quitArm: false,
   settings: DEFAULT_SETTINGS,
+  phase: 'idle',
+  netRole: 'off',
+  seat: 'p1',
 };
 
 export const useGame = create<GameStore>((set, get) => ({
@@ -111,9 +145,26 @@ export const useGame = create<GameStore>((set, get) => ({
   toggleStakes: () => set((s) => ({ stakesOn: !s.stakesOn })),
   setSideChoice: (v) => set({ sideChoice: v }),
 
+  setStartingBankroll: (v) => {
+    const startingBankroll = normalizeBankroll(v);
+    set((s) => ({
+      settings: {
+        ...s.settings,
+        startingBankroll,
+        minStake: normalizeMinStake(s.settings.minStake, startingBankroll),
+      },
+    }));
+  },
+
+  setMinStake: (v) =>
+    set((s) => ({
+      settings: { ...s.settings, minStake: normalizeMinStake(v, s.settings.startingBankroll) },
+    })),
+
   beginMatch: () => {
     const s = get();
-    const bank = Math.max(10, Math.round(s.settings.startingBankroll));
+    const bank = normalizeBankroll(s.settings.startingBankroll);
+    const minStake = normalizeMinStake(s.settings.minStake, bank);
     const resolvedStart: StartSide =
       s.sideChoice === 'random' ? (Math.random() < 0.5 ? 'emperor' : 'slave') : s.sideChoice;
     set({
@@ -124,7 +175,8 @@ export const useGame = create<GameStore>((set, get) => ({
       p1pts: bank,
       p2pts: bank,
       history: [],
-      stake: Math.min(25, bank),
+      settings: { ...s.settings, startingBankroll: bank, minStake },
+      stake: clampStake(openingStake(bank, minStake), bank, minStake),
       hands: null,
       discards: [],
       picks: { emp: null, slv: null },
@@ -140,14 +192,15 @@ export const useGame = create<GameStore>((set, get) => ({
   goPre: (game) => {
     const s = get();
     const slavePlayer = playerOfSide('slv', s.resolvedStart, game);
-    const max = bankOf(s, slavePlayer);
+    const bank = bankOf(s, slavePlayer);
     set({
       game,
       quitArm: false,
-      stake: Math.max(0, Math.min(s.stake || 25, max)),
+      stake: clampStake(s.stake || openingStake(s.settings.startingBankroll, s.settings.minStake), bank, s.settings.minStake),
       result: null,
       rev: 0,
       applied: false,
+      phase: 'scoreboard',
     });
   },
 
@@ -162,6 +215,7 @@ export const useGame = create<GameStore>((set, get) => ({
       result: null,
       rev: 0,
       applied: false,
+      phase: 'select',
     }),
 
   tapCard: (i) => {
@@ -175,19 +229,43 @@ export const useGame = create<GameStore>((set, get) => ({
     return 'raised';
   },
 
+  /** Pass & play: the side currently holding the device commits, then the device changes hands. */
   confirmSel: () => {
     const s = get();
-    if (s.sel < 0 || !s.hands) return 'noop';
-    const hand = s.hands[s.picker].slice();
-    const card = hand.splice(s.sel, 1)[0];
-    const hands: Hands = { ...s.hands, [s.picker]: hand } as Hands;
-    const picks = { ...s.picks, [s.picker]: card };
+    if (s.sel < 0) return 'noop';
+    const out = get().submitPick(s.picker, s.sel);
+    if (out === 'noop') return 'noop';
+    if (out === 'reveal') return 'reveal';
+    set({ picker: s.picker === 'emp' ? 'slv' : 'emp' });
+    return 'handoff';
+  },
 
-    if (s.picker === 'emp') {
-      set({ hands, picks, picker: 'slv', sel: -1 });
-      return 'handoff';
+  /**
+   * Commit one side's card. Host-authoritative: online, both seats submit
+   * independently and the turn resolves the moment the second card lands.
+   */
+  submitPick: (side, index) => {
+    const s = get();
+    if (!s.hands || s.picks[side]) return 'noop';
+    const hand = s.hands[side].slice();
+    if (index < 0 || index >= hand.length) return 'noop';
+    const card = hand.splice(index, 1)[0];
+    const hands: Hands = { ...s.hands, [side]: hand } as Hands;
+    const picks = { ...s.picks, [side]: card };
+
+    if (!picks.emp || !picks.slv) {
+      set({ hands, picks, sel: -1 });
+      return 'waiting';
     }
-    set({ hands, picks, sel: -1, rev: 0, applied: false, result: computeResult({ ...s, hands, picks }) });
+    set({
+      hands,
+      picks,
+      sel: -1,
+      rev: 0,
+      applied: false,
+      result: computeResult({ ...s, hands, picks }),
+      phase: 'reveal',
+    });
     return 'reveal';
   },
 
@@ -198,7 +276,8 @@ export const useGame = create<GameStore>((set, get) => ({
     if (s.applied) return;
     const r = s.result;
     if (!r) return;
-    if (r.draw) {
+    // The guest mirrors the host's tally; it never moves money itself.
+    if (r.draw || s.netRole === 'guest') {
       set({ applied: true });
       return;
     }
@@ -240,13 +319,14 @@ export const useGame = create<GameStore>((set, get) => ({
         rev: 0,
         result: null,
         applied: false,
+        phase: 'select',
       });
-      return 'handoff';
+      return s.netRole === 'off' ? 'handoff' : 'select';
     }
 
     get().applyResult();
     if (s.game >= TOTAL_GAMES) {
-      set({ inMatch: false });
+      set({ inMatch: false, phase: 'end' });
       return 'end';
     }
     get().goPre(s.game + 1);
@@ -255,13 +335,27 @@ export const useGame = create<GameStore>((set, get) => ({
 
   adjStake: (d) => {
     const s = get();
-    const max = bankOf(s, playerOfSide('slv', s.resolvedStart, s.game));
-    set({ stake: Math.max(0, Math.min(max, s.stake + d)) });
+    set({ stake: clampStake(s.stake + d, slaveBank(s), s.settings.minStake) });
+  },
+
+  setStake: (v) => {
+    const s = get();
+    set({ stake: clampStake(v, slaveBank(s), s.settings.minStake) });
   },
 
   allIn: () => {
     const s = get();
-    set({ stake: bankOf(s, playerOfSide('slv', s.resolvedStart, s.game)) });
+    set({ stake: clampStake(slaveBank(s), slaveBank(s), s.settings.minStake) });
+  },
+
+  minBet: () => {
+    const s = get();
+    set({ stake: stakeBounds(slaveBank(s), s.settings.minStake).min });
+  },
+
+  scaleStake: (factor) => {
+    const s = get();
+    set({ stake: clampStake(Math.round(s.stake * factor), slaveBank(s), s.settings.minStake) });
   },
 
   quitTap: () => {
@@ -273,8 +367,22 @@ export const useGame = create<GameStore>((set, get) => ({
     return 'armed';
   },
 
-  resetToTitle: () => set({ ...initial, p1: get().p1, p2: get().p2, settings: get().settings }),
+  setPhase: (phase) => set({ phase }),
+
+  startNet: (role, seat) => set({ netRole: role, seat, phase: 'lobby' }),
+
+  endNet: () => set({ netRole: 'off', seat: 'p1', phase: 'idle' }),
+
+  resetToTitle: () =>
+    set({ ...initial, p1: get().p1, p2: get().p2, settings: get().settings }),
 }));
+
+/** Opening wager: a quarter of the bankroll, rounded to the nudge size, above the floor. */
+export function openingStake(bankroll: number, minStake: number): number {
+  const step = stakeStep(bankroll);
+  const quarter = Math.max(step, Math.round(bankroll / 4 / step) * step);
+  return clampStake(quarter, bankroll, minStake);
+}
 
 function computeResult(s: State): Outcome | null {
   const e = s.picks.emp;
@@ -295,6 +403,8 @@ function computeResult(s: State): Outcome | null {
 export const bankOf = (s: State, p: PlayerKey) => (p === 'p1' ? s.p1pts : s.p2pts);
 export const winsOf = (s: State, p: PlayerKey) => (p === 'p1' ? s.p1w : s.p2w);
 
+const slaveBank = (s: State) => bankOf(s, playerOfSide('slv', s.resolvedStart, s.game));
+
 export function nameOf(s: State, p: PlayerKey) {
   const raw = (p === 'p1' ? s.p1 : s.p2) || '';
   return raw.trim() || (p === 'p1' ? 'Player 1' : 'Player 2');
@@ -304,3 +414,16 @@ export const empPlayerNow = (s: State) => emperorPlayer(s.resolvedStart, s.game)
 export const sidePlayerNow = (s: State, side: Side) => playerOfSide(side, s.resolvedStart, s.game);
 export const pickerPlayer = (s: State) => sidePlayerNow(s, s.picker);
 export const otherSide = (side: Side): Side => (side === 'emp' ? 'slv' : 'emp');
+
+/** The side this device plays. Online that is the seat; offline it is whoever holds the phone. */
+export const localSide = (s: State): Side =>
+  s.netRole === 'off' ? s.picker : (sidePlayerNow(s, 'emp') === s.seat ? 'emp' : 'slv');
+
+export const localPlayer = (s: State): PlayerKey => (s.netRole === 'off' ? pickerPlayer(s) : s.seat);
+
+export const isOnline = (s: State) => s.netRole !== 'off';
+
+/** Online, only the Slave side may move the wager. Offline, whoever holds the phone can. */
+export const canSetStake = (s: State) => s.netRole === 'off' || localSide(s) === 'slv';
+
+export const stakeRange = (s: State) => stakeBounds(slaveBank(s), s.settings.minStake);

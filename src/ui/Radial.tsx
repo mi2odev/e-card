@@ -29,7 +29,7 @@ export function Radial({
   radius?: number;
 }) {
   const id = useMemo(() => `rg${++uid}`, []);
-  const box = StyleSheet.flatten([StyleSheet.absoluteFill, style]) as ViewStyle;
+  const box = StyleSheet.flatten<ViewStyle>([StyleSheet.absoluteFill as ViewStyle, style]);
   // absoluteFill pins all four edges — drop the opposite edge when a size is given.
   if (box.width != null) box.right = undefined;
   if (box.height != null) box.bottom = undefined;
