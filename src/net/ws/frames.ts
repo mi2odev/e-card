@@ -208,6 +208,25 @@ export function handshakeResponse(key: string): string {
 export const rejectResponse = (code = 400, reason = 'Bad Request') =>
   [`HTTP/1.1 ${code} ${reason}`, 'Connection: close', 'Content-Length: 0', '', ''].join('\r\n');
 
+/**
+ * Answer for a plain browser visit, so opening the host's address on the other
+ * phone is a one-tap test of "can this phone reach that one at all?" — which
+ * tells a router blocking phone-to-phone traffic apart from a wrong address.
+ */
+export function healthResponse(room: string): string {
+  const body =
+    '<!doctype html><meta name=viewport content="width=device-width,initial-scale=1">' +
+    '<body style="background:#04100a;color:#efe5c8;font:16px/1.6 system-ui;text-align:center;padding:14vh 24px">' +
+    '<h1 style="color:#f2cf6f;letter-spacing:3px">E&#8209;CARD TABLE</h1>' +
+    '<p>This phone is serving the table, and your phone can reach it.</p>' +
+    `<p style="color:#8f8568;font-size:13px">Join with code<br><b style="color:#e9c86e;font-size:28px;letter-spacing:6px">${room}</b></p></body>`;
+  const bytes = utf8Encode(body).length;
+  return (
+    'HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n' +
+    `Content-Length: ${bytes}\r\nConnection: close\r\n\r\n${body}`
+  );
+}
+
 /* ------------------------------------------------------------------ frames */
 
 export const OP_TEXT = 0x1;

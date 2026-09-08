@@ -109,6 +109,15 @@ Install the APK on both phones. Then:
 3. Phone B: **TWO PHONES → JOIN**. Type phone A's address and the code.
 4. Phone A presses **BEGIN THE MATCH**.
 
+Only the **host** needs the built app. A phone still running Expo Go can join it — a
+guest is just a WebSocket client — which makes one build enough to try this out.
+
+If the two phones cannot see each other, open the host's address in the other phone's
+browser (`http://192.168.1.31:8787`). The host answers plain browser visits with a page
+showing the code to join with. If that page does not load, the phones cannot reach each
+other at all: usually the router has client isolation switched on (common on guest and
+public networks), or they are on different networks — a phone quietly on mobile data, say.
+
 For iOS you need an Apple Developer account (`eas build --platform ios`), or run
 `--profile development` and install through Xcode. The first launch on iOS asks for local
 network permission — say yes, or the phones cannot see each other.
