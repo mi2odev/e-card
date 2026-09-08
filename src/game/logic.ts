@@ -122,3 +122,65 @@ export function resolveTurn(input: {
 }
 
 export const fmt = (n: number | null | undefined) => (n == null ? 0 : n).toLocaleString('en-US');
+
+/* ------------------------------------------------------------------ money */
+
+/** Bankrolls offered on the setup screen. `custom` covers everything else. */
+export const BANKROLL_PRESETS = [50, 100, 250, 500, 1000, 5000] as const;
+
+export const MIN_BANKROLL = 10;
+export const MAX_BANKROLL = 1_000_000;
+
+/** Table minimums offered on the setup screen (each still clamped to the bankroll). */
+export const MIN_STAKE_PRESETS = [0, 5, 10, 25] as const;
+
+export const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+
+/** A whole-number bankroll inside the supported range. */
+export function normalizeBankroll(v: number): number {
+  if (!Number.isFinite(v)) return MIN_BANKROLL;
+  return clamp(Math.round(v), MIN_BANKROLL, MAX_BANKROLL);
+}
+
+/**
+ * The table minimum can never exceed half the bankroll — otherwise the first
+ * loss would leave a player unable to meet the floor.
+ */
+export function normalizeMinStake(v: number, bankroll: number): number {
+  if (!Number.isFinite(v)) return 0;
+  return clamp(Math.round(v), 0, Math.floor(normalizeBankroll(bankroll) / 2));
+}
+
+/**
+ * What the Slave side may wager: at least the table minimum, at most their own
+ * bankroll. When they are too poor to meet the minimum they simply push what is
+ * left — a floor is never allowed to make the game unplayable.
+ */
+export function stakeBounds(bank: number, minStake: number): { min: number; max: number } {
+  const max = Math.max(0, Math.floor(bank));
+  return { min: Math.min(Math.max(0, Math.round(minStake)), max), max };
+}
+
+export const clampStake = (v: number, bank: number, minStake: number) => {
+  const { min, max } = stakeBounds(bank, minStake);
+  if (!Number.isFinite(v)) return min;
+  return clamp(Math.round(v), min, max);
+};
+
+/** Nudge size for the ± buttons, scaled so a 5,000 pt table is not tapped 5 at a time. */
+export function stakeStep(bank: number): number {
+  if (bank <= 100) return 5;
+  if (bank <= 500) return 10;
+  if (bank <= 2000) return 25;
+  if (bank <= 10000) return 100;
+  return 500;
+}
+
+/** What each side stands to collect if this wager is won. */
+export function payoutPreview(stake: number, banks: Record<PlayerKey, number>, emperor: PlayerKey) {
+  const slave: PlayerKey = emperor === 'p1' ? 'p2' : 'p1';
+  return {
+    emperor: Math.min(stake * EMPEROR_MULT, banks[slave]),
+    slave: Math.min(stake * SLAVE_MULT, banks[emperor]),
+  };
+}

@@ -22,7 +22,17 @@ import { Radial } from './Radial';
 import { tapLight } from '../haptics';
 
 /* ------------------------------------------------------------------ shadows */
-export const shadow = (y: number, blur: number, opacity: number, elevation?: number): ViewStyle => ({
+type ShadowStyle = {
+  shadowColor: string;
+  shadowOffset: { width: number; height: number };
+  shadowOpacity: number;
+  shadowRadius: number;
+  elevation: number;
+};
+
+// Deliberately not typed as ViewStyle: the same shadow is applied to <Image>,
+// and ViewStyle and ImageStyle disagree about `overflow`.
+export const shadow = (y: number, blur: number, opacity: number, elevation?: number): ShadowStyle => ({
   shadowColor: '#000',
   shadowOffset: { width: 0, height: y },
   shadowOpacity: opacity,
@@ -45,13 +55,13 @@ try {
 export function GradientText({
   children,
   style,
-  colors = GOLD_TEXT_GRADIENT as unknown as string[],
-  locations = GOLD_TEXT_LOCATIONS as unknown as number[],
+  colors = GOLD_TEXT_GRADIENT,
+  locations = GOLD_TEXT_LOCATIONS,
 }: {
   children: string;
   style?: TextStyle | TextStyle[];
-  colors?: string[];
-  locations?: number[];
+  colors?: readonly [string, string, ...string[]];
+  locations?: readonly [number, number, ...number[]];
 }) {
   if (!MaskedView) return <Text style={[style, { color: C.gold }]}>{children}</Text>;
   return (
@@ -621,6 +631,338 @@ export function GoldHairline({ width = 56, style }: { width?: number; style?: Vi
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 0 }}
       style={[{ width, height: 1 }, style]}
+    />
+  );
+}
+
+/* ------------------------------------------------------------- segmented */
+export type SegmentOption<T extends string> = { value: T; label: string; caption?: string };
+
+/** Two or three mutually exclusive choices, styled like the side picker. */
+export function Segmented<T extends string>({
+  options,
+  value,
+  onChange,
+  tone = 'gold',
+  style,
+}: {
+  options: SegmentOption<T>[];
+  value: T;
+  onChange: (v: T) => void;
+  tone?: 'gold' | 'rust';
+  style?: ViewStyle;
+}) {
+  const gold = tone === 'gold';
+  return (
+    <View style={[{ flexDirection: 'row', gap: 9 }, style]}>
+      {options.map((o) => {
+        const active = o.value === value;
+        return (
+          <Pressable
+            key={o.value}
+            onPress={() => {
+              tapLight();
+              onChange(o.value);
+            }}
+            style={[
+              {
+                flex: 1,
+                minHeight: 62,
+                borderRadius: 12,
+                backgroundColor: 'rgba(0,0,0,0.3)',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 3,
+                borderWidth: 1.5,
+                borderColor: 'rgba(212,165,60,0.2)',
+              },
+              active && {
+                borderColor: gold ? 'rgba(212,165,60,0.9)' : 'rgba(199,90,54,0.9)',
+                backgroundColor: gold ? 'rgba(212,165,60,0.1)' : 'rgba(199,90,54,0.1)',
+              },
+            ]}
+          >
+            <Text
+              style={{
+                fontFamily: F.display,
+                fontSize: 19,
+                lineHeight: 21,
+                letterSpacing: 2,
+                color: active ? (gold ? C.goldText : C.rust) : C.creamMute,
+              }}
+            >
+              {o.label}
+            </Text>
+            {o.caption ? (
+              <Text style={{ fontFamily: F.body, fontSize: 8.5, letterSpacing: 1.5, color: C.muted3 }}>{o.caption}</Text>
+            ) : null}
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+/* ------------------------------------------------------------- money chip */
+export function MoneyChip({
+  label,
+  active,
+  tone = 'gold',
+  disabled,
+  onPress,
+  style,
+}: {
+  label: string;
+  active?: boolean;
+  tone?: 'gold' | 'rust';
+  disabled?: boolean;
+  onPress: () => void;
+  style?: ViewStyle;
+}) {
+  const gold = tone === 'gold';
+  return (
+    <Pressable
+      disabled={disabled}
+      onPress={() => {
+        tapLight();
+        onPress();
+      }}
+      style={({ pressed }) => [
+        {
+          minHeight: 40,
+          paddingVertical: 9,
+          paddingHorizontal: 15,
+          borderRadius: 999,
+          borderWidth: 1,
+          justifyContent: 'center',
+          borderColor: gold ? 'rgba(212,165,60,0.35)' : 'rgba(199,90,54,0.55)',
+          backgroundColor: pressed ? (gold ? 'rgba(212,165,60,0.16)' : 'rgba(199,90,54,0.18)') : 'transparent',
+          opacity: disabled ? 0.35 : 1,
+        },
+        active && {
+          borderColor: gold ? 'rgba(212,165,60,0.95)' : 'rgba(199,90,54,0.95)',
+          backgroundColor: gold ? 'rgba(212,165,60,0.14)' : 'rgba(199,90,54,0.16)',
+        },
+        style,
+      ]}
+    >
+      <Text
+        style={{
+          fontFamily: active ? F.bold : F.semi,
+          fontSize: 11,
+          letterSpacing: 1.5,
+          textAlign: 'center',
+          color: gold ? (active ? C.goldBright : C.goldSoft) : C.rust,
+        }}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+/* ------------------------------------------------------------ amount pad */
+/**
+ * Counting out a wager with a keypad rather than tapping +5 forty times.
+ * Values are clamped on commit, and the pad tells you why when it clamps.
+ */
+export function AmountPad({
+  visible,
+  title,
+  initial,
+  min,
+  max,
+  confirmLabel = 'SET WAGER',
+  onCancel,
+  onCommit,
+}: {
+  visible: boolean;
+  title: string;
+  initial: number;
+  min: number;
+  max: number;
+  confirmLabel?: string;
+  onCancel: () => void;
+  onCommit: (v: number) => void;
+}) {
+  const [text, setText] = useState('');
+
+  React.useEffect(() => {
+    if (visible) setText(String(Math.max(0, Math.round(initial))));
+  }, [visible, initial]);
+
+  const typed = text === '' ? 0 : Number(text);
+  const clamped = Math.min(max, Math.max(min, typed));
+  const note =
+    typed > max
+      ? `THE MOST ALLOWED IS ${max.toLocaleString('en-US')}`
+      : typed < min
+        ? `THE LEAST ALLOWED IS ${min.toLocaleString('en-US')}`
+        : '';
+
+  const press = (key: string) => {
+    tapLight();
+    if (key === '⌫') return setText((t) => t.slice(0, -1));
+    if (key === 'C') return setText('');
+    setText((t) => (t === '0' ? key : (t + key).slice(0, 9)));
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel} statusBarTranslucent>
+      <BlurView intensity={26} tint="dark" style={StyleSheet.absoluteFill}>
+        <Pressable onPress={onCancel} style={{ flex: 1, backgroundColor: 'rgba(3,5,4,0.87)', justifyContent: 'flex-end' }}>
+          <Pressable
+            onPress={() => {}}
+            style={[
+              {
+                backgroundColor: '#0c130e',
+                borderTopWidth: 1,
+                borderColor: C.goldBorder,
+                borderTopLeftRadius: 20,
+                borderTopRightRadius: 20,
+                paddingHorizontal: 18,
+                paddingTop: 16,
+                paddingBottom: 26,
+              },
+              shadow(-6, 40, 0.6, 18),
+            ]}
+          >
+            <Text style={{ fontFamily: F.body, fontSize: 10, letterSpacing: 3, color: C.muted3, textAlign: 'center' }}>
+              {title}
+            </Text>
+            <Text
+              numberOfLines={1}
+              style={{
+                fontFamily: F.display,
+                fontSize: 54,
+                lineHeight: 58,
+                color: C.goldBright,
+                textAlign: 'center',
+                marginTop: 2,
+              }}
+            >
+              {text === '' ? '0' : Number(text).toLocaleString('en-US')}
+            </Text>
+            <Text
+              style={{
+                fontFamily: F.bold,
+                fontSize: 9.5,
+                letterSpacing: 1.5,
+                color: note ? C.rust : C.muted6,
+                textAlign: 'center',
+                minHeight: 14,
+              }}
+            >
+              {note || `${min.toLocaleString('en-US')} – ${max.toLocaleString('en-US')}`}
+            </Text>
+
+            <View style={{ marginTop: 12, gap: 8 }}>
+              {[
+                ['1', '2', '3'],
+                ['4', '5', '6'],
+                ['7', '8', '9'],
+                ['C', '0', '⌫'],
+              ].map((row) => (
+                <View key={row.join()} style={{ flexDirection: 'row', gap: 8 }}>
+                  {row.map((key) => (
+                    <Pressable
+                      key={key}
+                      onPress={() => press(key)}
+                      style={({ pressed }) => [
+                        {
+                          flex: 1,
+                          minHeight: 54,
+                          borderRadius: 12,
+                          borderWidth: 1,
+                          borderColor: C.hairline,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          backgroundColor: pressed ? 'rgba(212,165,60,0.14)' : 'rgba(0,0,0,0.3)',
+                        },
+                      ]}
+                    >
+                      <Text style={{ fontFamily: F.display, fontSize: 24, lineHeight: 26, color: C.creamDim }}>{key}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              ))}
+            </View>
+
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
+              <OutlineButton label="CANCEL" fontSize={18} padV={14} onPress={onCancel} style={{ flex: 1 }} />
+              <BigButton
+                label={confirmLabel}
+                fontSize={18}
+                letterSpacing={2.5}
+                padV={15}
+                radius={13}
+                onPress={() => onCommit(clamped)}
+                style={{ flex: 1.4 }}
+              />
+            </View>
+          </Pressable>
+        </Pressable>
+      </BlurView>
+    </Modal>
+  );
+}
+
+/* ------------------------------------------------------------ link status */
+export function StatusLine({ text, tone = 'gold', style }: { text: string; tone?: 'gold' | 'rust' | 'dim'; style?: ViewStyle }) {
+  const color = tone === 'rust' ? C.rustText : tone === 'dim' ? C.muted3 : C.goldSoft;
+  return (
+    <View style={[{ flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'center' }, style]}>
+      <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: color }} />
+      <Text style={{ fontFamily: F.bold, fontSize: 10, letterSpacing: 2, color, flexShrink: 1 }}>{text}</Text>
+    </View>
+  );
+}
+
+/* ------------------------------------------------------------- code field */
+/** Four big characters, spaced out so they can be read across a table. */
+export function CodeField({
+  value,
+  onChangeText,
+  editable = true,
+  style,
+}: {
+  value: string;
+  onChangeText?: (v: string) => void;
+  editable?: boolean;
+  style?: ViewStyle;
+}) {
+  const [focus, setFocus] = useState(false);
+  return (
+    <TextInput
+      value={value}
+      onChangeText={onChangeText}
+      editable={editable}
+      maxLength={4}
+      autoCapitalize="characters"
+      autoCorrect={false}
+      autoComplete="off"
+      placeholder="––––"
+      placeholderTextColor={C.muted8}
+      selectionColor={C.gold}
+      returnKeyType="done"
+      onFocus={() => setFocus(true)}
+      onBlur={() => setFocus(false)}
+      style={[
+        {
+          backgroundColor: C.field,
+          borderWidth: 1,
+          borderColor: focus ? C.gold : C.goldBorderDim,
+          borderRadius: 12,
+          paddingVertical: 12,
+          color: C.goldBright,
+          fontFamily: F.display,
+          fontSize: 42,
+          lineHeight: 46,
+          letterSpacing: 12,
+          textAlign: 'center',
+        },
+        style,
+      ]}
     />
   );
 }

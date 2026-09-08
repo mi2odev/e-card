@@ -1,37 +1,50 @@
 import React from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { C, F, sideColor } from '../src/theme';
-import { BigButton, Chip, Fade, HelpButton, SideMono } from '../src/ui/kit';
+import { BigButton, Chip, Fade, HelpButton, SideMono, StatusLine } from '../src/ui/kit';
 import { DiscardPair, FanCard, MiniBack } from '../src/ui/Cards';
 import { TableBackground } from '../src/ui/Radial';
-import { nameOf, otherSide, pickerPlayer, sidePlayerNow, useGame } from '../src/store/useGame';
+import { localPlayer, localSide, nameOf, otherSide, sidePlayerNow, useGame } from '../src/store/useGame';
 import { LABEL, SIDE_WORD, fmt } from '../src/game/logic';
+import { netPick } from '../src/net/actions';
 import { tapMedium, tick } from '../src/haptics';
 
 export default function SelectScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const state = useGame();
-  const { picker, hands, sel, game, turn, stakesOn, stake, discards, picks, settings, tapCard, confirmSel } = state;
+  const { hands, sel, game, turn, stakesOn, stake, discards, picks, settings, netRole, tapCard, confirmSel } = state;
 
-  const holder = pickerPlayer(state);
-  const opp = sidePlayerNow(state, otherSide(picker));
-  const oppHand = hands ? hands[otherSide(picker)] : [];
-  const myHand = hands ? hands[picker] : [];
-  const oppLocked = !!picks[otherSide(picker)];
+  const online = netRole !== 'off';
+  // Offline the side is whoever holds the phone; online it is this device's seat.
+  const mySide = localSide(state);
+  const theirSide = otherSide(mySide);
+
+  const holder = localPlayer(state);
+  const opp = sidePlayerNow(state, theirSide);
+  const oppHand = hands ? hands[theirSide] : [];
+  const myHand = hands ? hands[mySide] : [];
+  const oppLocked = !!picks[theirSide];
+  const iAmLocked = !!picks[mySide];
   const selCard = sel >= 0 ? myHand[sel] : undefined;
 
   const commit = () => {
     tapMedium();
+    if (online) {
+      // Both seats commit independently; the phase change moves us to the reveal.
+      netPick(sel);
+      return;
+    }
     const next = confirmSel();
     if (next === 'handoff') router.replace('/handoff');
     else if (next === 'reveal') router.replace('/reveal');
   };
 
   const onCardPress = (i: number) => {
+    if (iAmLocked) return;
     if (tapCard(i) === 'confirm') commit();
     else tick();
   };
@@ -42,13 +55,13 @@ export default function SelectScreen() {
 
       <View style={{ flex: 1, paddingTop: insets.top }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 11, paddingTop: 14, paddingHorizontal: 16 }}>
-          <SideMono side={picker} size={40} />
+          <SideMono side={mySide} size={40} />
           <View style={{ gap: 2, minWidth: 0, flexShrink: 1 }}>
             <Text numberOfLines={1} style={{ fontFamily: F.bold, fontSize: 15, letterSpacing: 0.5, color: C.cream }}>
               {nameOf(state, holder).toUpperCase()}
             </Text>
-            <Text style={{ fontFamily: F.bold, fontSize: 9.5, letterSpacing: 2, color: sideColor(picker) }}>
-              {`${SIDE_WORD[picker]} SIDE`}
+            <Text style={{ fontFamily: F.bold, fontSize: 9.5, letterSpacing: 2, color: sideColor(mySide) }}>
+              {`${SIDE_WORD[mySide]} SIDE`}
             </Text>
           </View>
           <View style={{ flex: 1 }} />
@@ -106,7 +119,7 @@ export default function SelectScreen() {
             gap: 16,
             paddingTop: 8,
             paddingHorizontal: 16,
-            paddingBottom: 244 + insets.bottom,
+            paddingBottom: (iAmLocked ? 40 : 244) + insets.bottom,
           }}
         >
           {discards.length > 0 ? (
@@ -122,7 +135,17 @@ export default function SelectScreen() {
             </View>
           ) : null}
 
-          {settings.matchupHints ? (
+          {iAmLocked ? (
+            <View style={{ alignItems: 'center', gap: 10 }}>
+              <Text style={{ fontFamily: F.display, fontSize: 34, lineHeight: 36, letterSpacing: 3, color: C.creamPale }}>
+                CARD PLAYED
+              </Text>
+              <StatusLine tone="dim" text={`WAITING FOR ${nameOf(state, opp).toUpperCase()}`} />
+              <Text style={{ fontFamily: F.italic, fontSize: 12.5, color: C.muted4, textAlign: 'center' }}>
+                Face down on the table. No taking it back.
+              </Text>
+            </View>
+          ) : settings.matchupHints ? (
             <View style={{ alignItems: 'center', gap: 4 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                 <Text style={[hint.word, { color: C.goldText }]}>EMPEROR</Text>
@@ -140,7 +163,7 @@ export default function SelectScreen() {
       </View>
 
       <Fade
-        visible={sel >= 0}
+        visible={sel >= 0 && !iAmLocked}
         duration={250}
         style={{
           position: 'absolute',
@@ -154,7 +177,7 @@ export default function SelectScreen() {
       >
         <BigButton
           label={selCard ? `PLAY THE ${LABEL[selCard.t]}` : 'PLAY'}
-          tone={picker === 'emp' ? 'gold' : 'rust'}
+          tone={mySide === 'emp' ? 'gold' : 'rust'}
           fontSize={23}
           letterSpacing={2.5}
           padV={16}
@@ -167,18 +190,20 @@ export default function SelectScreen() {
         </Text>
       </Fade>
 
-      <View style={{ position: 'absolute', left: 14, right: 14, bottom: 6 + insets.bottom, height: 218 }}>
-        {myHand.map((c, i) => (
-          <FanCard
-            key={c.id}
-            cardType={c.t}
-            index={i}
-            count={myHand.length}
-            raised={sel === i}
-            onPress={() => onCardPress(i)}
-          />
-        ))}
-      </View>
+      {iAmLocked ? null : (
+        <View style={{ position: 'absolute', left: 14, right: 14, bottom: 6 + insets.bottom, height: 218 }}>
+          {myHand.map((c, i) => (
+            <FanCard
+              key={c.id}
+              cardType={c.t}
+              index={i}
+              count={myHand.length}
+              raised={sel === i}
+              onPress={() => onCardPress(i)}
+            />
+          ))}
+        </View>
+      )}
 
       <LinearGradient
         pointerEvents="none"

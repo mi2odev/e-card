@@ -1,0 +1,196 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from 'react-native';
+import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { C, F } from '../src/theme';
+import { BigButton, CodeField, HelpButton, NameField, Segmented, StatusLine, shadow } from '../src/ui/kit';
+import { TableBackground } from '../src/ui/Radial';
+import { useGame } from '../src/store/useGame';
+import { DRIVERS, startSession } from '../src/net/session';
+import { wifiHostsItself } from '../src/net/wifi';
+import { defaultRelayAddress } from '../src/net/discover';
+import { DEFAULT_PORT, isCompleteRoomCode, makeRoomCode, normalizeRoomCode } from '../src/net/protocol';
+import type { TransportKind } from '../src/net/link';
+import { tapLight } from '../src/haptics';
+
+type Role = 'host' | 'guest';
+
+export default function OnlineScreen() {
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const p1 = useGame((s) => s.p1);
+  const setP1 = useGame((s) => s.setP1);
+
+  const [role, setRole] = useState<Role>('host');
+  const [kind, setKind] = useState<TransportKind>('wifi');
+  const [code, setCode] = useState(() => makeRoomCode());
+  const [address, setAddress] = useState('');
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  // Only the host invents a code; the guest types the one they were shown.
+  const [hostCode] = useState(code);
+  useEffect(() => {
+    setCode(role === 'host' ? hostCode : '');
+  }, [role, hostCode]);
+
+  useEffect(() => {
+    setAddress((a) => a || defaultRelayAddress());
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    void DRIVERS[kind].availability().then((a) => {
+      if (alive) setReason(a.reason ?? '');
+    });
+    return () => {
+      alive = false;
+    };
+  }, [kind]);
+
+  const wifi = kind === 'wifi';
+  // A host that can serve the room from this phone needs no relay address.
+  const needsAddress = wifi && !(role === 'host' && wifiHostsItself());
+  const ready = useMemo(
+    () => isCompleteRoomCode(code) && (!needsAddress || address.trim().length > 0) && !busy,
+    [code, needsAddress, address, busy],
+  );
+
+  const go = async () => {
+    if (!ready) return;
+    setBusy(true);
+    setError('');
+    try {
+      await startSession({
+        kind,
+        role,
+        code: normalizeRoomCode(code),
+        address: address.trim(),
+        port: DEFAULT_PORT,
+        name: p1.trim() || (role === 'host' ? 'Host' : 'Challenger'),
+      });
+      router.replace('/lobby');
+    } catch (e) {
+      // Drivers report their own failures through the link status; this is for
+      // the unexpected kind, so the button never just goes dead.
+      setError(String((e as { message?: string })?.message ?? e).toUpperCase());
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <View style={{ flex: 1, backgroundColor: C.tableEdge }}>
+      <TableBackground />
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{
+            flexGrow: 1,
+            paddingHorizontal: 22,
+            paddingTop: insets.top,
+            paddingBottom: 20 + insets.bottom,
+          }}
+        >
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 12 }}>
+            <Pressable
+              onPress={() => {
+                tapLight();
+                router.back();
+              }}
+              style={({ pressed }) => [
+                {
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 7,
+                  height: 44,
+                  paddingLeft: 12,
+                  paddingRight: 17,
+                  borderRadius: 999,
+                  borderWidth: 1,
+                  borderColor: C.goldBorder,
+                  backgroundColor: pressed ? 'rgba(212,165,60,0.14)' : 'rgba(0,0,0,0.28)',
+                },
+                shadow(3, 10, 0.4, 3),
+                pressed && { transform: [{ translateY: 1 }] },
+              ]}
+            >
+              <Text style={{ fontFamily: F.display, fontSize: 21, lineHeight: 22, color: C.goldSoft }}>‹</Text>
+              <Text style={{ fontFamily: F.bold, fontSize: 10.5, letterSpacing: 2.5, color: C.goldSoft }}>BACK</Text>
+            </Pressable>
+            <HelpButton />
+          </View>
+
+          <Text style={{ fontFamily: F.display, fontSize: 36, lineHeight: 40, letterSpacing: 3, color: C.creamWarm, marginTop: 4 }}>
+            TWO PHONES
+          </Text>
+          <Text style={{ fontFamily: F.body, fontSize: 10, letterSpacing: 2.5, color: C.muted3, marginTop: 2 }}>
+            EACH PLAYER KEEPS THEIR OWN HAND
+          </Text>
+
+          <Segmented
+            style={{ marginTop: 20 }}
+            value={role}
+            onChange={setRole}
+            options={[
+              { value: 'host', label: 'OPEN', caption: 'DEAL THE TABLE' },
+              { value: 'guest', label: 'JOIN', caption: 'TAKE A SEAT' },
+            ]}
+          />
+
+          <Text style={{ fontFamily: F.semi, fontSize: 10, letterSpacing: 2, color: C.muted2, marginTop: 22, marginBottom: 8 }}>
+            HOW THE PHONES TALK
+          </Text>
+          <Segmented
+            value={kind}
+            onChange={setKind}
+            options={[
+              { value: 'wifi', label: DRIVERS.wifi.label, caption: DRIVERS.wifi.blurb },
+              { value: 'bluetooth', label: DRIVERS.bluetooth.label, caption: DRIVERS.bluetooth.blurb },
+            ]}
+          />
+          {reason ? <StatusLine tone="rust" text={reason} style={{ marginTop: 10 }} /> : null}
+          {error ? <StatusLine tone="rust" text={error} style={{ marginTop: 10 }} /> : null}
+
+          <View style={{ marginTop: 22 }}>
+            <NameField label="YOUR NAME" value={p1} onChangeText={setP1} placeholder="Enter a name" />
+          </View>
+
+          <Text style={{ fontFamily: F.semi, fontSize: 10, letterSpacing: 2, color: C.muted2, marginTop: 20, marginBottom: 8 }}>
+            {role === 'host' ? 'YOUR TABLE CODE — READ IT OUT' : 'THE TABLE CODE'}
+          </Text>
+          <CodeField
+            value={code}
+            editable={role === 'guest'}
+            onChangeText={(v) => setCode(normalizeRoomCode(v))}
+          />
+
+          {needsAddress ? (
+            <View style={{ marginTop: 18 }}>
+              <NameField
+                label={`RELAY ADDRESS · PORT ${DEFAULT_PORT}`}
+                value={address}
+                onChangeText={setAddress}
+                placeholder="192.168.1.20"
+              />
+              <Text style={{ fontFamily: F.body, fontSize: 9, letterSpacing: 1.2, color: C.muted7, marginTop: 8, lineHeight: 13 }}>
+                RUN `npm run relay` ON A COMPUTER ON THIS WI-FI AND ENTER THE ADDRESS IT PRINTS. BOTH PHONES USE THE SAME ONE.
+              </Text>
+            </View>
+          ) : null}
+
+          <View style={{ flex: 1, minHeight: 18 }} />
+
+          <BigButton
+            label={busy ? 'ONE MOMENT…' : role === 'host' ? 'OPEN THE TABLE' : 'JOIN THE TABLE'}
+            fontSize={24}
+            onPress={() => void go()}
+            style={{ marginTop: 18, opacity: ready ? 1 : 0.45 }}
+          />
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </View>
+  );
+}

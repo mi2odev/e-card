@@ -1,0 +1,219 @@
+import React from 'react';
+import { Pressable, ScrollView, Text, View } from 'react-native';
+import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { C, F } from '../src/theme';
+import { BigButton, Chip, GradientText, HelpButton, SideMono, StatusLine } from '../src/ui/kit';
+import { SidePanel, StakesPanel } from '../src/ui/Terms';
+import { TableBackground } from '../src/ui/Radial';
+import { nameOf, useGame } from '../src/store/useGame';
+import { useNet } from '../src/store/useNet';
+import { stopSession } from '../src/net/session';
+import { STATUS_WORD } from '../src/net/protocol';
+import { tapLight } from '../src/haptics';
+
+export default function LobbyScreen() {
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const state = useGame();
+  const net = useNet();
+
+  const isHost = net.role === 'host';
+  const me = isHost ? 'p1' : 'p2';
+  const them = isHost ? 'p2' : 'p1';
+  const failed = net.status === 'error' || net.status === 'closed';
+  const seated = net.peerHere && net.status === 'connected';
+
+  const leave = () => {
+    tapLight();
+    stopSession('left the table');
+    router.replace('/');
+  };
+
+  return (
+    <View style={{ flex: 1, backgroundColor: C.tableEdge }}>
+      <TableBackground />
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{
+          flexGrow: 1,
+          paddingHorizontal: 22,
+          paddingTop: insets.top,
+          paddingBottom: 20 + insets.bottom,
+        }}
+      >
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 12 }}>
+          <Pressable
+            onPress={leave}
+            style={({ pressed }) => [
+              {
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 7,
+                height: 40,
+                paddingLeft: 12,
+                paddingRight: 15,
+                borderRadius: 999,
+                borderWidth: 1,
+                borderColor: 'rgba(212,165,60,0.28)',
+                backgroundColor: pressed ? 'rgba(199,90,54,0.16)' : 'rgba(0,0,0,0.28)',
+              },
+            ]}
+          >
+            <Text style={{ fontFamily: F.display, fontSize: 16, lineHeight: 17, color: C.muted }}>✕</Text>
+            <Text style={{ fontFamily: F.bold, fontSize: 10, letterSpacing: 2, color: C.muted }}>LEAVE THE TABLE</Text>
+          </Pressable>
+          <HelpButton />
+        </View>
+
+        <View style={{ alignItems: 'center', marginTop: 8 }}>
+          <Text style={{ fontFamily: F.body, fontSize: 10, letterSpacing: 3, color: C.muted3 }}>
+            {isHost ? 'YOUR TABLE CODE' : 'AT THE TABLE'}
+          </Text>
+          <View style={{ marginTop: 4 }}>
+            <GradientText
+              style={{ fontFamily: F.display, fontSize: 62, lineHeight: 64, letterSpacing: 12, textAlign: 'center' }}
+            >
+              {net.code}
+            </GradientText>
+          </View>
+
+          <StatusLine
+            style={{ marginTop: 8 }}
+            tone={failed ? 'rust' : seated ? 'gold' : 'dim'}
+            text={net.detail || STATUS_WORD[net.status]}
+          />
+
+          {net.info?.hint ? (
+            <Chip
+              style={{ marginTop: 10 }}
+              label={
+                net.info.mode === 'direct'
+                  ? `SERVED BY THIS PHONE · ${net.info.hint}`
+                  : net.info.mode === 'bluetooth'
+                    ? net.info.hint
+                    : `VIA RELAY ${net.info.hint}`
+              }
+            />
+          ) : null}
+
+          {isHost && net.info?.mode === 'relay' ? (
+            <Text
+              style={{
+                fontFamily: F.body,
+                fontSize: 9,
+                letterSpacing: 1.2,
+                color: C.muted7,
+                marginTop: 8,
+                textAlign: 'center',
+                lineHeight: 13,
+              }}
+            >
+              THE OTHER PHONE NEEDS THIS CODE AND THE SAME RELAY ADDRESS
+            </Text>
+          ) : null}
+        </View>
+
+        <View
+          style={{
+            marginTop: 20,
+            borderRadius: 16,
+            backgroundColor: C.panel,
+            borderWidth: 1,
+            borderColor: C.hairline,
+            overflow: 'hidden',
+          }}
+        >
+          <Seat label="THIS PHONE" name={nameOf(state, me)} side="emp" present />
+          <Seat
+            label="THE CHALLENGER"
+            name={net.peerHere ? nameOf(state, them) : 'EMPTY SEAT'}
+            side="slv"
+            present={net.peerHere}
+            divider
+          />
+        </View>
+
+        <SidePanel
+          style={{ marginTop: 22 }}
+          editable={isHost}
+          heading={
+            <>
+              FIRST DEAL — <Text style={{ color: C.goldText }}>{nameOf(state, 'p1').toUpperCase()}</Text> PLAYS AS
+            </>
+          }
+        />
+
+        <StakesPanel style={{ marginTop: 22 }} editable={isHost} />
+
+        <View style={{ flex: 1, minHeight: 16 }} />
+
+        {isHost ? (
+          <BigButton
+            label={seated ? 'BEGIN THE MATCH' : 'WAITING FOR A CHALLENGER'}
+            onPress={() => {
+              if (seated) state.beginMatch();
+            }}
+            style={{ marginTop: 16, opacity: seated ? 1 : 0.45 }}
+          />
+        ) : (
+          <View
+            style={{
+              marginTop: 16,
+              paddingVertical: 19,
+              borderRadius: 13,
+              borderWidth: 1,
+              borderColor: C.goldBorderFaint,
+              backgroundColor: 'rgba(0,0,0,0.25)',
+            }}
+          >
+            <StatusLine
+              tone="dim"
+              text={seated ? `${nameOf(state, 'p1').toUpperCase()} SETS THE TERMS` : 'LOOKING FOR THE TABLE'}
+            />
+          </View>
+        )}
+      </ScrollView>
+    </View>
+  );
+}
+
+function Seat({
+  label,
+  name,
+  side,
+  present,
+  divider,
+}: {
+  label: string;
+  name: string;
+  side: 'emp' | 'slv';
+  present: boolean;
+  divider?: boolean;
+}) {
+  return (
+    <View
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        paddingVertical: 13,
+        paddingHorizontal: 14,
+        borderTopWidth: divider ? 1 : 0,
+        borderTopColor: C.hairlineSoft,
+        opacity: present ? 1 : 0.5,
+      }}
+    >
+      <SideMono side={side} size={42} />
+      <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
+        <Text numberOfLines={1} style={{ fontFamily: F.bold, fontSize: 14.5, letterSpacing: 0.5, color: C.cream }}>
+          {name.toUpperCase()}
+        </Text>
+        <Text style={{ fontFamily: F.body, fontSize: 9, letterSpacing: 2, color: C.muted3 }}>{label}</Text>
+      </View>
+      <Text style={{ fontFamily: F.display, fontSize: 20, lineHeight: 21, color: present ? C.goldBright : C.muted8 }}>
+        {present ? '✓' : '…'}
+      </Text>
+    </View>
+  );
+}
