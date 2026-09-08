@@ -180,9 +180,16 @@ async function host(opts: HostOptions, ev: LinkEvents): Promise<Link> {
   );
 }
 
-/** Said out loud on both phones when the dial never lands. */
+/**
+ * Said when the dial never lands. The host in relay mode knows it was reaching
+ * for a relay; a guest may have been given either a relay or a host phone, so it
+ * is told what to check rather than what to run.
+ */
 const noRelay = (address: string, port: number) =>
-  `NO RELAY AT ${address}:${port} — RUN "npm run relay" ON THAT COMPUTER AND CHECK BOTH PHONES ARE ON ITS WI-FI`;
+  `NO RELAY AT ${address}:${port} — RUN "npm run relay" ON THAT COMPUTER, IN A SECOND TERMINAL, AND LEAVE IT OPEN`;
+
+const noAnswer = (address: string, port: number) =>
+  `NOTHING ANSWERED AT ${address}:${port} — CHECK THE ADDRESS, AND THAT BOTH PHONES ARE ON THE SAME WI-FI`;
 
 async function join(opts: JoinOptions, ev: LinkEvents): Promise<Link> {
   ev.onStatus('connecting');
@@ -190,7 +197,7 @@ async function join(opts: JoinOptions, ev: LinkEvents): Promise<Link> {
     url(opts.address, opts.port, opts.code, 'guest'),
     ev,
     { mode: 'relay', hint: `${opts.address}:${opts.port}` },
-    noRelay(opts.address, opts.port),
+    noAnswer(opts.address, opts.port),
     () => ev.onStatus('connected'),
   );
 }

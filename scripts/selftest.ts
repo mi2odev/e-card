@@ -571,7 +571,7 @@ async function testUnreachable() {
   await until(() => E.net.useNet.getState().status === 'error', 'a dial that lands nowhere reports an error');
   const detail = E.net.useNet.getState().detail;
   check(detail.includes(`127.0.0.1:${PORT + 3}`), 'naming the address it could not reach', detail);
-  check(detail.includes('npm run relay'), 'and what to do about it', detail);
+  check(detail.includes('SAME WI-FI'), 'and what to check about it', detail);
   check(
     !detail.includes('LEFT THE TABLE'),
     'never blaming a phone that was never connected',
