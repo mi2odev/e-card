@@ -17,7 +17,7 @@
  */
 
 import { decode, encode, type NetMessage } from './protocol';
-import { deadLink, type Availability, type HostOptions, type JoinOptions, type Link, type LinkEvents, type TransportDriver } from './link';
+import { deadLink, type HostOptions, type JoinOptions, type Link, type LinkEvents, type TransportDriver } from './link';
 import { errorText, startTcpHost, tcpHostAvailable, type TcpHostHandle } from './ws/tcpHost';
 import type { Connection } from './ws/hostServer';
 import { hotspotTargets, localIpAddress } from './discover';
@@ -334,15 +334,8 @@ async function join(opts: JoinOptions, ev: LinkEvents): Promise<Link> {
   );
 }
 
-async function availability(): Promise<Availability> {
-  return { ok: true };
-}
-
 export const wifiDriver: TransportDriver = {
   kind: 'wifi',
-  label: 'WI-FI',
-  blurb: 'NEARBY · NO INTERNET NEEDED',
-  availability,
   host,
   join,
 };

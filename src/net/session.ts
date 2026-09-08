@@ -20,11 +20,9 @@ import { seatSide, applySnapshot, makeSnapshot, snapshotKey, type Snapshot } fro
 import { DEFAULT_PORT, type Intent, type LinkStatus, type NetMessage, PROTOCOL_VERSION } from './protocol';
 import type { Link, TransportDriver, TransportKind } from './link';
 import { wifiDriver } from './wifi';
-import { bluetoothDriver } from './bluetooth';
 
 export const DRIVERS: Record<TransportKind, TransportDriver> = {
   wifi: wifiDriver,
-  bluetooth: bluetoothDriver,
 };
 
 const GUEST_SEAT = 'p2' as const;
@@ -44,18 +42,9 @@ const MAX_RETRIES = 14;
 const HEARTBEAT_MS = 4000;
 const SILENT_MS = 12_000;
 
-/**
- * What losing the peer means depends on the transport. On Wi-Fi the link is a
- * socket that stays perfectly good with the seat empty, so there is nothing to
- * redial; over Bluetooth the pairing *is* the link, and getting the other phone
- * back means advertising or scanning again.
- */
-const REDIAL_ON_PEER_LOSS: Record<TransportKind, boolean> = { wifi: false, bluetooth: true };
-
 const SAY = {
   dropped: 'THE LINK DROPPED — TAKING THE SEAT AGAIN',
   quiet: 'THE OTHER PHONE HAS GONE QUIET',
-  outOfRange: 'THE OTHER PHONE WENT OUT OF RANGE',
   gaveUp: 'COULD NOT GET BACK TO THE TABLE — TRY AGAIN?',
   guestLeft: 'THE CHALLENGER LEFT THE TABLE — THE SEAT IS OPEN AGAIN',
 };
@@ -194,9 +183,10 @@ function onMessage(role: 'host' | 'guest', msg: NetMessage): void {
           broadcast();
         }
       } else {
+        // The seat emptied. The link itself is a socket and stays perfectly
+        // good, so there is nothing to redial — the table simply waits.
         expectPeer = false;
         net.patch({ peerHere: false, peerName: '' });
-        if (table && REDIAL_ON_PEER_LOSS[table.kind] && !peerLeftForGood) linkLost(SAY.outOfRange);
       }
       break;
 
@@ -377,14 +367,9 @@ function startHeartbeat(): void {
       // Say the seat is empty, but keep the pipe: whether the fault is this end
       // or the other one is not knowable from here. A socket of ours that is
       // really dead will say so itself and be redialled; a phone that was only
-      // asleep answers the next ping and is simply back. Bluetooth is the
-      // exception — there the pairing *is* the link, so it has to be remade.
+      // asleep answers the next ping and is simply back.
       saidQuiet = true;
       useNet.getState().patch({ peerHere: false, detail: SAY.quiet });
-      if (table && REDIAL_ON_PEER_LOSS[table.kind]) {
-        linkLost(SAY.quiet);
-        return;
-      }
     }
     link.send({ t: 'ping', ts: Date.now() });
   }, HEARTBEAT_MS);

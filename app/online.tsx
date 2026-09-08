@@ -7,11 +7,10 @@ import { BigButton, CodeField, HelpButton, NameField, Segmented, StatusLine, sha
 import { TableBackground } from '../src/ui/Radial';
 import { useGame } from '../src/store/useGame';
 import { useNet } from '../src/store/useNet';
-import { DRIVERS, forgetParkedTable, resumeSession, startSession } from '../src/net/session';
+import { forgetParkedTable, resumeSession, startSession } from '../src/net/session';
 import { wifiHostsItself } from '../src/net/wifi';
 import { defaultRelayAddress, localIpAddress } from '../src/net/discover';
 import { DEFAULT_PORT, isCompleteRoomCode, makeRoomCode, normalizeRoomCode } from '../src/net/protocol';
-import type { TransportKind } from '../src/net/link';
 import { tapLight } from '../src/haptics';
 
 type Role = 'host' | 'guest';
@@ -26,13 +25,11 @@ export default function OnlineScreen() {
   const resume = useNet((s) => s.resume);
 
   const [role, setRole] = useState<Role>('host');
-  const [kind, setKind] = useState<TransportKind>('wifi');
-  // Wi-Fi, but on a network one of the two phones is making rather than one they
-  // both joined. Nothing is typed: the guest works out where the host must be.
+  // Both phones on a network they joined, or on one that a phone is making
+  // itself. On a hotspot nothing is typed: the guest works out where the host is.
   const [hotspot, setHotspot] = useState(false);
   const [code, setCode] = useState(() => makeRoomCode());
   const [address, setAddress] = useState('');
-  const [reason, setReason] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [ownIp, setOwnIp] = useState('');
@@ -48,25 +45,14 @@ export default function OnlineScreen() {
     void localIpAddress().then(setOwnIp);
   }, []);
 
-  useEffect(() => {
-    let alive = true;
-    void DRIVERS[kind].availability().then((a) => {
-      if (alive) setReason(a.reason ?? '');
-    });
-    return () => {
-      alive = false;
-    };
-  }, [kind]);
-
-  const wifi = kind === 'wifi';
-  const onHotspot = wifi && hotspot;
+  const onHotspot = hotspot;
   // This build can serve the table from the phone itself — no computer needed,
   // and no relay address to type. The other phone dials this one directly.
   const canServe = wifiHostsItself();
-  const directHost = wifi && role === 'host' && canServe;
+  const directHost = role === 'host' && canServe;
   // A hotspot table is always served by the phone sharing, and always found by
   // the other one, so there is never an address to type on either side.
-  const needsAddress = wifi && !onHotspot && !directHost;
+  const needsAddress = !onHotspot && !directHost;
   const ready = useMemo(
     () => isCompleteRoomCode(code) && (!needsAddress || address.trim().length > 0) && !busy,
     [code, needsAddress, address, busy],
@@ -99,7 +85,7 @@ export default function OnlineScreen() {
     setError('');
     try {
       await startSession({
-        kind,
+        kind: 'wifi',
         role,
         code: normalizeRoomCode(code),
         // Hosting directly, the address is this phone's own — it is what the
@@ -228,32 +214,16 @@ export default function OnlineScreen() {
           />
 
           <Text style={{ fontFamily: F.semi, fontSize: 10, letterSpacing: 2, color: C.muted2, marginTop: 22, marginBottom: 8 }}>
-            HOW THE PHONES TALK
+            HOW THE PHONES FIND EACH OTHER
           </Text>
           <Segmented
-            value={kind}
-            onChange={setKind}
+            value={hotspot ? 'hotspot' : 'network'}
+            onChange={(v) => setHotspot(v === 'hotspot')}
             options={[
-              { value: 'wifi', label: DRIVERS.wifi.label, caption: DRIVERS.wifi.blurb },
-              { value: 'bluetooth', label: DRIVERS.bluetooth.label, caption: DRIVERS.bluetooth.blurb },
+              { value: 'network', label: 'WI-FI', caption: 'BOTH ON ONE NETWORK' },
+              { value: 'hotspot', label: 'HOTSPOT', caption: 'A PHONE MAKES ONE' },
             ]}
           />
-          {wifi ? (
-            <>
-              <Text style={{ fontFamily: F.semi, fontSize: 10, letterSpacing: 2, color: C.muted2, marginTop: 18, marginBottom: 8 }}>
-                HOW THEY FIND EACH OTHER
-              </Text>
-              <Segmented
-                value={hotspot ? 'hotspot' : 'network'}
-                onChange={(v) => setHotspot(v === 'hotspot')}
-                options={[
-                  { value: 'network', label: 'NETWORK', caption: 'BOTH ON ONE WI-FI' },
-                  { value: 'hotspot', label: 'HOTSPOT', caption: 'A PHONE MAKES IT' },
-                ]}
-              />
-            </>
-          ) : null}
-          {reason ? <StatusLine tone="rust" text={reason} style={{ marginTop: 10 }} /> : null}
           {error ? <StatusLine tone="rust" text={error} style={{ marginTop: 10 }} /> : null}
 
           <View style={{ marginTop: 22 }}>

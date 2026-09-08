@@ -2,7 +2,7 @@
 
 import type { LinkStatus, NetMessage } from './protocol';
 
-export type TransportKind = 'wifi' | 'bluetooth';
+export type TransportKind = 'wifi';
 
 export type LinkEvents = {
   onStatus: (status: LinkStatus, detail?: string) => void;
@@ -11,7 +11,7 @@ export type LinkEvents = {
 
 /** How this link ended up working, so the lobby can tell the players what to do. */
 export type LinkInfo = {
-  mode: 'direct' | 'relay' | 'bluetooth' | 'hotspot';
+  mode: 'direct' | 'relay' | 'hotspot';
   /** Short line shown under the room code, e.g. the address to type in. */
   hint: string;
 };
@@ -31,15 +31,8 @@ export type Link = {
 export type HostOptions = { code: string; address: string; port: number; hotspot?: boolean };
 export type JoinOptions = { code: string; address: string; port: number; hotspot?: boolean };
 
-export type Availability = { ok: boolean; reason?: string };
-
 export type TransportDriver = {
   kind: TransportKind;
-  label: string;
-  /** One line under the option, in the game's voice. */
-  blurb: string;
-  /** Cheap enough to call on render; result is cached by the caller. */
-  availability: () => Promise<Availability>;
   host: (opts: HostOptions, ev: LinkEvents) => Promise<Link>;
   join: (opts: JoinOptions, ev: LinkEvents) => Promise<Link>;
 };

@@ -112,7 +112,7 @@ export default function LobbyScreen() {
               label={
                 net.info.mode === 'direct'
                   ? `SERVED BY THIS PHONE · ${net.info.hint}`
-                  : net.info.mode === 'bluetooth' || net.info.mode === 'hotspot'
+                  : net.info.mode === 'hotspot'
                     ? net.info.hint
                     : `VIA RELAY ${net.info.hint}`
               }
