@@ -88,7 +88,7 @@ export default function ScoreboardScreen() {
           </Text>
           <View style={{ marginTop: 4 }}>
             <GradientText style={{ fontFamily: F.display, fontSize: 62, lineHeight: 62, letterSpacing: 4, textAlign: 'center' }}>
-              {`GAME ${game}`}
+              {`ROUND ${game}`}
             </GradientText>
           </View>
           <Text style={{ fontFamily: F.body, fontSize: 10.5, letterSpacing: 3, color: C.muted, marginTop: 4 }}>OF TWELVE</Text>
@@ -156,7 +156,7 @@ export default function ScoreboardScreen() {
                     {stakesOn ? fmt(bankOf(state, p)) : String(winsOf(state, p))}
                   </Text>
                   <Text style={{ fontFamily: F.body, fontSize: 9, letterSpacing: 1.5, color: C.muted2 }}>
-                    {stakesOn ? `${winsOf(state, p)} WINS` : 'GAMES WON'}
+                    {stakesOn ? `${winsOf(state, p)} WON` : 'ROUNDS WON'}
                   </Text>
                 </View>
               </View>
@@ -251,7 +251,7 @@ export default function ScoreboardScreen() {
 
         {canDeal ? (
           <BigButton
-            label={`DEAL GAME ${game}`}
+            label={`DEAL ROUND ${game}`}
             onPress={() => {
               netDeal();
               if (!online) router.replace('/handoff');

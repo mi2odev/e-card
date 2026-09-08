@@ -66,3 +66,21 @@ Online play changes two things about the flow itself:
    same time; the pass & play sequence (Emperor picks, then Slave) is untouched.
 2. **The Slave side deals.** They are the one naming the wager, so the deal button is
    theirs; the other phone shows what it is waiting for.
+
+## Rule corrections against the anime
+
+The first cut of the rules engine played each round until a card decided it, with the
+Emperor side always placing first. Neither matches E-Card as played in *Kaiji*. Both are
+fixed, and `npm run selftest` covers them:
+
+| Rule | Was | Now |
+|---|---|---|
+| Round length | Played until decisive — up to 5 plays | **Three plays at most** (`PLAYS_PER_GAME`) |
+| Three drawn plays | Impossible; a 5th play was always Emperor vs Slave, so the Slave side could force its 5× win every round by stalling | The round is **spent** — no winner, no payout, and a neutral pip on the history strip |
+| Placing order | Emperor side placed first on every play | `firstPlacer(round, play)` — the Emperor side opens round 1, and the opener alternates on every play and again at each new round |
+| Order enforcement | None — online, both phones played at once | `picker` is authoritative in both modes; a card from the other side is refused, and the far phone shows *"…side places first"* until its turn |
+| Vocabulary | "game", "turn" | "round", "play n of 3", matching the source |
+
+Unchanged, because they were already right: the hands (1 special + 4 Citizens, redealt
+each round), the matchups and the Citizen-vs-Citizen discard, 12 rounds in 4 sets of 3
+with the sides swapping between sets, and the 1× / 5× payouts capped at the loser's purse.

@@ -142,9 +142,37 @@ screen to hide: the other hand was never sent.
 
 ## Rules encoded
 
-Emperor › Citizen › Slave › Emperor. Citizen vs Citizen is a draw and the game continues.
-12 games, sides swap every 3. Emperor-side win pays 1×, Slave-side win pays 5×, capped at
-the loser's bankroll. Stakes are set each game by whoever holds the Slave side.
+E-Card as played in *Kaiji*.
+
+**The cards.** Each side is dealt 5 fresh cards every round. Emperor side: 1 Emperor +
+4 Citizens. Slave side: 1 Slave + 4 Citizens.
+
+**The matchups.** Emperor › Citizen › Slave › Emperor. Citizen vs Citizen is a draw —
+both cards are discarded and the round continues.
+
+**A round is three plays at most.** It ends the instant a special card wins or loses. If
+all three plays are drawn, the round is *spent*: neither side takes it and no money moves.
+Two of the five cards are never revealed, which is the whole point — with 4 Citizens
+against 3 plays, either side can sit on Citizens and give nothing away. (Were a round
+played to exhaustion instead, its fifth play would always be Emperor against Slave, and
+the Slave side could force its 5× win every round just by stalling.)
+
+**The sides do not place together.** One lays its card face down first and the other
+answers, then both are flipped. Round 1 opens with the Emperor side; the opener alternates
+on every play within a round, and again at the top of each round — so round 1 goes
+E, S, E and round 2 goes S, E, S.
+
+**The match.** 12 rounds in 4 sets of 3. The sides swap between sets, so each player holds
+each side for 6 rounds.
+
+**The money.** An Emperor-side win collects 1× the wager; a Slave-side win collects 5×,
+which is what compensates the Slave side for only ever beating one card. Either payout is
+capped at what the loser actually has.
+
+One deliberate departure: in the anime the wager is named each round by the challenger,
+against a house that covers it. Between two equal players that has no obvious equivalent,
+so here the Slave side — the one deciding how much to risk on their single chance — names
+it. The purse and the table minimum are yours to set (see **Playing for money** above).
 
 Portrait-locked, dark, 44 px minimum touch targets.
 

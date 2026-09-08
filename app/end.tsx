@@ -93,7 +93,7 @@ export default function EndScreen() {
                   {stakesOn ? fmt(bankOf(state, p)) : String(winsOf(state, p))}
                 </Text>
                 <Text style={{ fontFamily: F.body, fontSize: 9, letterSpacing: 1.5, color: C.muted2 }}>
-                  {stakesOn ? `${winsOf(state, p)} WINS` : 'GAMES WON'}
+                  {stakesOn ? `${winsOf(state, p)} WON` : 'ROUNDS WON'}
                 </Text>
               </View>
             </View>

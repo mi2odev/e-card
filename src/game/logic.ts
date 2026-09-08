@@ -1,4 +1,19 @@
-// Pure game rules. No React, no store — identical behaviour to the approved design.
+// Pure game rules for E-Card, as played in Kaiji. No React, no store.
+//
+// A match is 12 rounds in 4 groups of 3; the Emperor and Slave sides swap
+// between groups, so each player holds each side for 6 rounds.
+//
+// A round is at most THREE plays. Each side holds 1 special card + 4 Citizens,
+// so either side can sit on Citizens for all three plays — a round that never
+// turns up an Emperor or a Slave simply ends with nobody winning and no money
+// moving. That cap is the whole game: without it the fifth play of a round
+// would always be Emperor against Slave, and the Slave side could force its 5x
+// win every round just by stalling.
+//
+// The two sides do not place at the same time. One places face down first and
+// the other answers. Round 1 opens with the Emperor side placing first, the
+// opener alternates every round, and it alternates again on every play inside a
+// round.
 
 export type CardType = 'E' | 'C' | 'S';
 export type Card = { id: string; t: CardType };
@@ -12,6 +27,8 @@ export const SIDE_WORD: Record<Side, string> = { emp: 'EMPEROR', slv: 'SLAVE' };
 
 export const TOTAL_GAMES = 12;
 export const SWAP_EVERY = 3;
+/** A round is decided within three plays, or it is decided by nobody. */
+export const PLAYS_PER_GAME = 3;
 export const EMPEROR_MULT = 1;
 export const SLAVE_MULT = 5;
 
@@ -40,6 +57,20 @@ export function isSwapGame(game: number): boolean {
   return game > 1 && (game - 1) % SWAP_EVERY === 0;
 }
 
+/**
+ * Which side lays its card face down first on this play.
+ *
+ * Round 1 play 1 is the Emperor side. It alternates on each play within a round
+ * and again at the start of each round, which is exactly the parity of
+ * (round + play).
+ */
+export function firstPlacer(game: number, turn: number): Side {
+  return (game - 1 + (turn - 1)) % 2 === 0 ? 'emp' : 'slv';
+}
+
+/** The last play of a round — after this one the round is over, drawn or not. */
+export const isFinalPlay = (turn: number) => turn >= PLAYS_PER_GAME;
+
 let seq = 0;
 function shuffle<T>(a: T[]): T[] {
   for (let j = a.length - 1; j > 0; j--) {
@@ -60,7 +91,12 @@ export function freshHands(): Hands {
   };
 }
 
-export type DrawOutcome = { draw: true; line: string };
+/**
+ * Citizen against Citizen. `final` marks the third play, where the round is
+ * spent and nobody collects — as opposed to the earlier plays, where both cards
+ * are discarded and the round carries on.
+ */
+export type DrawOutcome = { draw: true; final: boolean; line: string };
 export type DecisiveOutcome = {
   draw: false;
   winSide: Side;
@@ -75,7 +111,8 @@ export type Outcome = DrawOutcome | DecisiveOutcome;
 
 /**
  * Emperor beats Citizen · Citizen beats Slave · Slave beats Emperor.
- * Citizen vs Citizen is a draw and the game continues.
+ * Citizen vs Citizen is a draw: both cards are discarded and the round goes on,
+ * unless this was the third play, in which case the round ends with no winner.
  * Emperor-side win pays 1x, Slave-side win pays 5x, capped at the loser's bankroll.
  */
 export function resolveTurn(input: {
@@ -83,14 +120,22 @@ export function resolveTurn(input: {
   slvCard: CardType;
   resolvedStart: StartSide;
   game: number;
+  turn: number;
   stake: number;
   stakesOn: boolean;
   banks: Record<PlayerKey, number>;
 }): Outcome {
-  const { empCard, slvCard, resolvedStart, game, stake, stakesOn, banks } = input;
+  const { empCard, slvCard, resolvedStart, game, turn, stake, stakesOn, banks } = input;
 
   if (empCard === 'C' && slvCard === 'C') {
-    return { draw: true, line: 'Both Citizens fall. The duel continues.' };
+    const final = isFinalPlay(turn);
+    return {
+      draw: true,
+      final,
+      line: final
+        ? 'Both Citizens fall. The round is spent — neither side takes it.'
+        : 'Both Citizens fall. The round continues.',
+    };
   }
 
   let winSide: Side;

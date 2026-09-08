@@ -8,7 +8,7 @@ import { SEAL } from '../src/assets';
 import { BigButton, Chip, PulseRing, useBreathe } from '../src/ui/kit';
 import { Glow, Radial } from '../src/ui/Radial';
 import { nameOf, otherSide, pickerPlayer, sidePlayerNow, useGame } from '../src/store/useGame';
-import { SIDE_WORD, fmt } from '../src/game/logic';
+import { PLAYS_PER_GAME, SIDE_WORD, fmt } from '../src/game/logic';
 import { tapMedium } from '../src/haptics';
 
 export default function HandoffScreen() {
@@ -16,7 +16,7 @@ export default function HandoffScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const state = useGame();
-  const { picker, game, turn, stakesOn, stake } = state;
+  const { picker, game, turn, stakesOn, stake, picks } = state;
 
   const holder = pickerPlayer(state);
   const waiting = sidePlayerNow(state, otherSide(picker));
@@ -95,11 +95,14 @@ export default function HandoffScreen() {
           {`${SIDE_WORD[picker]} SIDE`}
         </Text>
 
-        <Chip label={`GAME ${game} OF 12 · TURN ${turn}`} style={{ marginTop: 14 }} />
+        <Chip label={`ROUND ${game} OF 12 · PLAY ${turn} OF ${PLAYS_PER_GAME}`} style={{ marginTop: 14 }} />
         {stakesOn ? <Chip tone="rust" label={`STAKE ${fmt(stake)} ON THE TABLE`} style={{ marginTop: 9 }} /> : null}
 
         <Text style={{ fontFamily: F.italic, fontSize: 12.5, color: C.muted4, marginTop: 18, textAlign: 'center' }}>
           {`${nameOf(state, waiting)}, eyes away.`}
+        </Text>
+        <Text style={{ fontFamily: F.body, fontSize: 9, letterSpacing: 2, color: C.muted7, marginTop: 6 }}>
+          {picks[otherSide(picker)] ? 'YOU ANSWER THE CARD ALREADY DOWN' : 'YOU PLACE FIRST THIS PLAY'}
         </Text>
 
         <View style={{ flex: 1 }} />
