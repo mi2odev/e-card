@@ -209,6 +209,14 @@ export default function OnlineScreen() {
               <Text style={{ fontFamily: F.body, fontSize: 9, letterSpacing: 1.2, color: C.muted7, marginTop: 8, lineHeight: 13 }}>
                 RUN `npm run relay` ON A COMPUTER ON THIS WI-FI AND ENTER THE ADDRESS IT PRINTS. BOTH PHONES USE THE SAME ONE.
               </Text>
+              {role === 'host' ? (
+                <Text
+                  style={{ fontFamily: F.bold, fontSize: 9, letterSpacing: 1.2, color: C.rustText, marginTop: 10, lineHeight: 13 }}
+                >
+                  THIS COPY RUNS INSIDE EXPO GO, WHICH IS NOT ALLOWED TO OPEN A PORT — SO A COMPUTER HAS TO SIT IN THE
+                  MIDDLE. BUILD THE APP AND THIS PHONE HOSTS THE TABLE ITSELF, WITH NO COMPUTER AT ALL.
+                </Text>
+              ) : null}
             </View>
           ) : null}
 
