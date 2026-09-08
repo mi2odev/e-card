@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { C, F, sideColor } from '../src/theme';
 import { CARD_ART } from '../src/assets';
 import { Chip, Fade, OutlineButton, useBreathe } from '../src/ui/kit';
@@ -15,6 +15,21 @@ import { netAdvance } from '../src/net/actions';
 import { draw as drawBuzz, tapHeavy, upset, win } from '../src/haptics';
 
 const CARD_W = 146;
+
+/**
+ * How a card sits once the round is decided: 1 for the card that took it, -1 for
+ * the card that lost it, 0 while nothing is settled. Runs on the UI thread.
+ */
+function verdict(fate: number, t: number) {
+  'worklet';
+  return {
+    opacity: fate < 0 ? 1 - 0.4 * t : 1,
+    transform: [
+      { translateY: fate > 0 ? -8 * t : fate < 0 ? 6 * t : 0 },
+      { scale: fate > 0 ? 1 + 0.055 * t : fate < 0 ? 1 - 0.03 * t : 1 },
+    ],
+  };
+}
 
 export default function RevealScreen() {
   const router = useRouter();
@@ -71,6 +86,18 @@ export default function RevealScreen() {
 
   const decisive = result && !result.draw ? result : null;
   const glowRust = rev >= 2 && decisive?.winSide === 'slv';
+
+  // The verdict lands on the cards themselves, not only in the banner under
+  // them: the one that took the round lifts, the one that lost it sinks away.
+  const leftFate = decisive ? (decisive.winner === 'p1' ? 1 : -1) : 0;
+  const rightFate = -leftFate;
+  const settled = useSharedValue(0);
+  useEffect(() => {
+    settled.value = withTiming(rev >= 4 ? 1 : 0, { duration: 420, easing: Easing.out(Easing.ease) });
+  }, [rev, settled]);
+
+  const leftVerdict = useAnimatedStyle(() => verdict(leftFate, settled.value));
+  const rightVerdict = useAnimatedStyle(() => verdict(rightFate, settled.value));
 
   const glowOpacity = useSharedValue(0);
   useEffect(() => {
@@ -136,27 +163,31 @@ export default function RevealScreen() {
             <Glow color={glowRust ? 'rgba(207,90,54,0.34)' : 'rgba(226,180,80,0.3)'} edge={0.65} />
           </Animated.View>
 
-          <FlipCard
-            width={CARD_W}
-            faceSource={CARD_ART[leftPick ? leftPick.t : 'C']}
-            entered={rev >= 1}
-            flipped={rev >= 2}
-            enterFrom="top"
-            dramaMs={500}
-          >
-            <CardLabel name={nameOf(state, 'p1')} side={p1Side} />
-          </FlipCard>
+          <Animated.View style={leftVerdict}>
+            <FlipCard
+              width={CARD_W}
+              faceSource={CARD_ART[leftPick ? leftPick.t : 'C']}
+              entered={rev >= 1}
+              flipped={rev >= 2}
+              enterFrom="top"
+              dramaMs={500}
+            >
+              <CardLabel name={nameOf(state, 'p1')} side={p1Side} />
+            </FlipCard>
+          </Animated.View>
 
-          <FlipCard
-            width={CARD_W}
-            faceSource={CARD_ART[rightPick ? rightPick.t : 'C']}
-            entered={rev >= 1}
-            flipped={rev >= 2}
-            enterFrom="bottom"
-            dramaMs={550}
-          >
-            <CardLabel name={nameOf(state, 'p2')} side={p2Side} />
-          </FlipCard>
+          <Animated.View style={rightVerdict}>
+            <FlipCard
+              width={CARD_W}
+              faceSource={CARD_ART[rightPick ? rightPick.t : 'C']}
+              entered={rev >= 1}
+              flipped={rev >= 2}
+              enterFrom="bottom"
+              dramaMs={550}
+            >
+              <CardLabel name={nameOf(state, 'p2')} side={p2Side} />
+            </FlipCard>
+          </Animated.View>
         </Pressable>
 
         <Fade visible={rev >= 3} duration={500} style={{ minHeight: 26, justifyContent: 'center' }}>

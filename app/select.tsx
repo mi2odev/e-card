@@ -141,8 +141,10 @@ export default function SelectScreen() {
                 DISCARDS — DRAWN TURNS
               </Text>
               <View style={{ flexDirection: 'row', gap: 14, flexWrap: 'wrap', justifyContent: 'center' }}>
-                {discards.map((t) => (
-                  <DiscardPair key={t} label={`TURN ${t}`} />
+                {discards.map((t, i) => (
+                  <Appear key={t} delay={i * 70} duration={300} from={6} scaleFrom={0.9}>
+                    <DiscardPair label={`TURN ${t}`} />
+                  </Appear>
                 ))}
               </View>
             </View>

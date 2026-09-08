@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import Animated, { Easing, useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
 import { C, F, sideColor } from '../src/theme';
 import {
   AmountPad,
@@ -48,6 +49,16 @@ export default function ScoreboardScreen() {
   const settled = last && last.g === game - 1 && last.winner ? last : null;
   const purseBefore = (p: PlayerKey) =>
     bankOf(state, p) - (settled ? (settled.winner === p ? settled.paid : -settled.paid) : 0);
+
+  // The wager answers back when it is moved — the number is the whole panel.
+  const bump = useSharedValue(0);
+  useEffect(() => {
+    bump.value = withSequence(
+      withTiming(1, { duration: 90, easing: Easing.out(Easing.ease) }),
+      withTiming(0, { duration: 220, easing: Easing.out(Easing.ease) }),
+    );
+  }, [stake, bump]);
+  const bumpStyle = useAnimatedStyle(() => ({ transform: [{ scale: 1 + 0.07 * bump.value }] }));
 
   const leave = () => {
     tapLight();
@@ -216,18 +227,21 @@ export default function ScoreboardScreen() {
                 hitSlop={8}
                 style={({ pressed }) => [{ minWidth: 116, opacity: pressed ? 0.75 : 1 }]}
               >
-                <Text
+                <Animated.Text
                   numberOfLines={1}
-                  style={{
-                    fontFamily: F.display,
-                    fontSize: 48,
-                    lineHeight: 50,
-                    color: C.goldBright,
-                    textAlign: 'center',
-                  }}
+                  style={[
+                    {
+                      fontFamily: F.display,
+                      fontSize: 48,
+                      lineHeight: 50,
+                      color: C.goldBright,
+                      textAlign: 'center',
+                    },
+                    bumpStyle,
+                  ]}
                 >
                   {fmt(stake)}
-                </Text>
+                </Animated.Text>
                 {mine ? (
                   <Text
                     style={{
