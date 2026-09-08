@@ -358,6 +358,13 @@ async function testDirectHost() {
       };
     });
 
+    // A browser visit to a phone-hosted table answers too, so the same
+    // reachability check works whether a phone or a computer is serving.
+    const page = await fetch(`http://127.0.0.1:${PORT + 1}/`);
+    const pageBody = await page.text();
+    eq(page.status, 200, 'a browser visit to a phone-hosted table is answered');
+    check(pageBody.includes(ROOM), 'and shows the code to join with', pageBody.slice(0, 120));
+
     const ws = new WebSocket(`ws://127.0.0.1:${PORT + 1}/?room=${ROOM}&role=guest`);
     const seen: string[] = [];
     ws.onmessage = (e) => seen.push(String(e.data));

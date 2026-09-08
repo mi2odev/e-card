@@ -12,6 +12,7 @@ import {
   encodeFrame,
   encodeText,
   handshakeResponse,
+  healthResponse,
   parseHandshake,
   rejectResponse,
   utf8Decode,
@@ -124,11 +125,14 @@ export function attachHostConnection(sock: ByteSocket, expectedRoom: string, h: 
       const end = findHeaderEnd(pending);
       if (end < 0) return;
 
+      const head = utf8Decode(pending.subarray(0, end));
       let hs;
       try {
-        hs = parseHandshake(utf8Decode(pending.subarray(0, end)));
+        hs = parseHandshake(head);
       } catch {
-        return bail(rejectResponse());
+        // A browser rather than the game. Answer it: someone is checking whether
+        // this phone is reachable from theirs.
+        return bail(/^GET\s/i.test(head) ? healthResponse(expectedRoom) : rejectResponse());
       }
       if (!hs) return bail(rejectResponse());
       if (expectedRoom && roomOf(hs.path) !== expectedRoom.toUpperCase()) {
