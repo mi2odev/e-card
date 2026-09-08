@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C, F } from '../src/theme';
 import { CARD_ART } from '../src/assets';
 import { CARD_RATIO } from '../src/ui/Cards';
-import { BigButton, GoldHairline, GradientText, HelpButton, NameField, OutlineButton, shadow } from '../src/ui/kit';
+import { Appear, BigButton, GoldHairline, GradientText, HelpButton, NameField, OutlineButton, shadow } from '../src/ui/kit';
 import { Glow, TableBackground } from '../src/ui/Radial';
 import { useGame } from '../src/store/useGame';
 import { useNet } from '../src/store/useNet';
@@ -94,28 +94,30 @@ export default function TitleScreen() {
 
           <View style={{ width: '100%', gap: 12 }}>
             {resume ? (
-              <Pressable
-                onPress={() => void takeSeatAgain()}
-                style={({ pressed }) => [
-                  {
-                    paddingVertical: 12,
-                    paddingHorizontal: 16,
-                    borderRadius: 12,
-                    borderWidth: 1,
-                    borderColor: C.goldBorder,
-                    backgroundColor: pressed ? 'rgba(212,165,60,0.14)' : 'rgba(0,0,0,0.32)',
-                    gap: 3,
-                  },
-                  shadow(4, 12, 0.4, 3),
-                ]}
-              >
-                <Text style={{ fontFamily: F.bold, fontSize: 11, letterSpacing: 2.2, color: C.goldBright }}>
-                  {`TAKE YOUR SEAT AGAIN · ${resume.code}`}
-                </Text>
-                <Text style={{ fontFamily: F.body, fontSize: 9, letterSpacing: 1.6, color: C.muted7 }}>
-                  {resume.inMatch ? `ROUND ${resume.game} OF 12 WAS STILL ON THE TABLE` : 'THE TABLE YOU LEFT'}
-                </Text>
-              </Pressable>
+              <Appear duration={420} from={10}>
+                <Pressable
+                  onPress={() => void takeSeatAgain()}
+                  style={({ pressed }) => [
+                    {
+                      paddingVertical: 12,
+                      paddingHorizontal: 16,
+                      borderRadius: 12,
+                      borderWidth: 1,
+                      borderColor: C.goldBorder,
+                      backgroundColor: pressed ? 'rgba(212,165,60,0.14)' : 'rgba(0,0,0,0.32)',
+                      gap: 3,
+                    },
+                    shadow(4, 12, 0.4, 3),
+                  ]}
+                >
+                  <Text style={{ fontFamily: F.bold, fontSize: 11, letterSpacing: 2.2, color: C.goldBright }}>
+                    {`TAKE YOUR SEAT AGAIN · ${resume.code}`}
+                  </Text>
+                  <Text style={{ fontFamily: F.body, fontSize: 9, letterSpacing: 1.6, color: C.muted7 }}>
+                    {resume.inMatch ? `ROUND ${resume.game} OF 12 WAS STILL ON THE TABLE` : 'THE TABLE YOU LEFT'}
+                  </Text>
+                </Pressable>
+              </Appear>
             ) : null}
             <NameField label="PLAYER 1" value={p1} onChangeText={setP1} placeholder="Enter a name" />
             <NameField label="PLAYER 2" value={p2} onChangeText={setP2} placeholder="Enter a name" />

@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { C, F, sideColor } from '../src/theme';
-import { BigButton, Chip, Fade, HelpButton, SideMono, StatusLine } from '../src/ui/kit';
+import { Appear, BigButton, Chip, Fade, HelpButton, SideMono, StatusLine } from '../src/ui/kit';
 import { DiscardPair, FanCard, MiniBack } from '../src/ui/Cards';
 import { TableBackground } from '../src/ui/Radial';
 import { localPlayer, localSide, nameOf, otherSide, sidePlayerNow, useGame } from '../src/store/useGame';
@@ -110,12 +110,17 @@ export default function SelectScreen() {
             <MiniBack key={c.id} />
           ))}
           {oppLocked ? (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, marginLeft: 2 }}>
+            <Appear
+              duration={280}
+              from={0}
+              scaleFrom={0.8}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 7, marginLeft: 2 }}
+            >
               <MiniBack locked />
               <Text style={{ fontFamily: F.bold, fontSize: 8.5, letterSpacing: 1.5, color: C.rust, width: 40, lineHeight: 13 }}>
                 LOCKED IN
               </Text>
-            </View>
+            </Appear>
           ) : null}
         </View>
 
@@ -144,7 +149,7 @@ export default function SelectScreen() {
           ) : null}
 
           {iAmLocked ? (
-            <View style={{ alignItems: 'center', gap: 10 }}>
+            <Appear style={{ alignItems: 'center', gap: 10 }}>
               <Text style={{ fontFamily: F.display, fontSize: 34, lineHeight: 36, letterSpacing: 3, color: C.creamPale }}>
                 CARD PLAYED
               </Text>
@@ -152,9 +157,9 @@ export default function SelectScreen() {
               <Text style={{ fontFamily: F.italic, fontSize: 12.5, color: C.muted4, textAlign: 'center' }}>
                 Face down on the table. No taking it back.
               </Text>
-            </View>
+            </Appear>
           ) : !myTurn ? (
-            <View style={{ alignItems: 'center', gap: 10 }}>
+            <Appear style={{ alignItems: 'center', gap: 10 }}>
               <Text
                 style={{ fontFamily: F.display, fontSize: 30, lineHeight: 32, letterSpacing: 3, color: C.creamPale, textAlign: 'center' }}
               >
@@ -164,7 +169,7 @@ export default function SelectScreen() {
               <Text style={{ fontFamily: F.italic, fontSize: 12.5, color: C.muted4, textAlign: 'center' }}>
                 Their card goes down face first. You will not see it.
               </Text>
-            </View>
+            </Appear>
           ) : settings.matchupHints ? (
             <View style={{ alignItems: 'center', gap: 4 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>

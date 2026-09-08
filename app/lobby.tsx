@@ -1,8 +1,9 @@
-import React from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import React, { useEffect } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { C, F } from '../src/theme';
-import { BigButton, Chip, GradientText, HelpButton, SideMono, StatusLine } from '../src/ui/kit';
+import { BigButton, Chip, GradientText, HelpButton, SideMono, StatusLine, useWaitingPulse } from '../src/ui/kit';
 import { SidePanel, StakesPanel } from '../src/ui/Terms';
 import { TableBackground } from '../src/ui/Radial';
 import { nameOf, useGame } from '../src/store/useGame';
@@ -22,6 +23,8 @@ export default function LobbyScreen() {
   const them = isHost ? 'p2' : 'p1';
   const failed = net.status === 'error' || net.status === 'closed';
   const seated = net.peerHere && net.status === 'connected';
+  // The code breathes while the seat opposite is empty, and settles when it fills.
+  const codePulse = useWaitingPulse(!seated);
 
   const leave = () => {
     tapLight();
@@ -68,13 +71,13 @@ export default function LobbyScreen() {
           <Text style={{ fontFamily: F.body, fontSize: 10, letterSpacing: 3, color: C.muted3 }}>
             {isHost ? 'YOUR TABLE CODE' : 'AT THE TABLE'}
           </Text>
-          <View style={{ marginTop: 4 }}>
+          <Animated.View style={[{ marginTop: 4 }, codePulse]}>
             <GradientText
               style={{ fontFamily: F.display, fontSize: 62, lineHeight: 64, letterSpacing: 12, textAlign: 'center' }}
             >
               {net.code}
             </GradientText>
-          </View>
+          </Animated.View>
 
           <StatusLine
             style={{ marginTop: 8 }}
@@ -220,6 +223,7 @@ export default function LobbyScreen() {
   );
 }
 
+/** A seat at the table. Somebody arriving is worth watching happen. */
 function Seat({
   label,
   name,
@@ -233,18 +237,29 @@ function Seat({
   present: boolean;
   divider?: boolean;
 }) {
+  const t = useSharedValue(present ? 1 : 0);
+  useEffect(() => {
+    t.value = withTiming(present ? 1 : 0, { duration: 420, easing: Easing.out(Easing.ease) });
+  }, [present, t]);
+
+  const row = useAnimatedStyle(() => ({ opacity: 0.5 + 0.5 * t.value }));
+  const taken = useAnimatedStyle(() => ({ opacity: t.value, transform: [{ scale: 0.7 + 0.3 * t.value }] }));
+  const waiting = useAnimatedStyle(() => ({ opacity: 1 - t.value }));
+
   return (
-    <View
-      style={{
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12,
-        paddingVertical: 13,
-        paddingHorizontal: 14,
-        borderTopWidth: divider ? 1 : 0,
-        borderTopColor: C.hairlineSoft,
-        opacity: present ? 1 : 0.5,
-      }}
+    <Animated.View
+      style={[
+        {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 12,
+          paddingVertical: 13,
+          paddingHorizontal: 14,
+          borderTopWidth: divider ? 1 : 0,
+          borderTopColor: C.hairlineSoft,
+        },
+        row,
+      ]}
     >
       <SideMono side={side} size={42} />
       <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
@@ -253,9 +268,14 @@ function Seat({
         </Text>
         <Text style={{ fontFamily: F.body, fontSize: 9, letterSpacing: 2, color: C.muted3 }}>{label}</Text>
       </View>
-      <Text style={{ fontFamily: F.display, fontSize: 20, lineHeight: 21, color: present ? C.goldBright : C.muted8 }}>
-        {present ? '✓' : '…'}
-      </Text>
-    </View>
+      <View style={{ width: 24, height: 24, alignItems: 'center', justifyContent: 'center' }}>
+        <Animated.Text style={[seatMark.glyph, { color: C.goldBright }, taken]}>✓</Animated.Text>
+        <Animated.Text style={[seatMark.glyph, { color: C.muted8 }, waiting]}>…</Animated.Text>
+      </View>
+    </Animated.View>
   );
 }
+
+const seatMark = StyleSheet.create({
+  glyph: { position: 'absolute', fontFamily: F.display, fontSize: 20, lineHeight: 21 },
+});

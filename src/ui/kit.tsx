@@ -15,7 +15,16 @@ import {
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import Animated, { Easing, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
+import Animated, {
+  cancelAnimation,
+  Easing,
+  interpolateColor,
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withRepeat,
+  withTiming,
+} from 'react-native-reanimated';
 import { C, F, GOLD_TEXT_GRADIENT, GOLD_TEXT_LOCATIONS } from '../theme';
 import { CARD_ART } from '../assets';
 import { Radial } from './Radial';
@@ -223,6 +232,92 @@ export function useBreathe(durationMs: number, to = 1.14) {
     t.value = withRepeat(withTiming(1, { duration: durationMs, easing: Easing.inOut(Easing.ease) }), -1, true);
   }, [t, durationMs]);
   return useAnimatedStyle(() => ({ transform: [{ scale: 1 + (to - 1) * t.value }] }));
+}
+
+/**
+ * Lifts its children in the first time they are drawn.
+ *
+ * For things that arrive rather than change: a panel that opens, a card that
+ * lands on the table, the offer of a seat you left. Toggling something already
+ * on screen is `Fade`'s job — this one only ever plays forwards, once.
+ */
+export function Appear({
+  delay = 0,
+  duration = 320,
+  from = 8,
+  scaleFrom,
+  style,
+  children,
+}: {
+  delay?: number;
+  duration?: number;
+  /** How far below its place it starts, in px. */
+  from?: number;
+  scaleFrom?: number;
+  style?: StyleProp<ViewStyle>;
+  children: React.ReactNode;
+}) {
+  const t = useSharedValue(0);
+  React.useEffect(() => {
+    t.value = withDelay(delay, withTiming(1, { duration, easing: Easing.out(Easing.ease) }));
+    // Mount only: this is an entrance, not a state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const anim = useAnimatedStyle(() => ({
+    opacity: t.value,
+    transform: [
+      { translateY: from * (1 - t.value) },
+      ...(scaleFrom ? [{ scale: scaleFrom + (1 - scaleFrom) * t.value }] : []),
+    ],
+  }));
+  return <Animated.View style={[style, anim]}>{children}</Animated.View>;
+}
+
+/**
+ * A slow breath for something that is waiting on somebody else — the table code
+ * with nobody at it yet. Settles back to rest the moment the wait is over.
+ */
+export function useWaitingPulse(active: boolean, to = 1.03, durationMs = 3200) {
+  const t = useSharedValue(0);
+  React.useEffect(() => {
+    if (active) {
+      t.value = withRepeat(withTiming(1, { duration: durationMs, easing: Easing.inOut(Easing.ease) }), -1, true);
+    } else {
+      cancelAnimation(t);
+      t.value = withTiming(0, { duration: 320, easing: Easing.out(Easing.ease) });
+    }
+  }, [active, durationMs, t]);
+  return useAnimatedStyle(() => ({ transform: [{ scale: 1 + (to - 1) * t.value }] }));
+}
+
+/**
+ * Counts a number up (or down) to where it now stands.
+ *
+ * Used for the purses, which is where the whole game actually happens: arriving
+ * at the scoreboard, the money is seen to move rather than simply be different.
+ * Pass `startAt` to animate from a value the screen never rendered — the purse
+ * as it was before the round that just resolved.
+ */
+export function useCountUp(value: number, startAt?: number, durationMs = 900) {
+  const [shown, setShown] = React.useState(startAt ?? value);
+  const at = React.useRef(shown);
+
+  React.useEffect(() => {
+    const from = at.current;
+    if (from === value) return;
+    const began = Date.now();
+    let frame = requestAnimationFrame(function step() {
+      const p = Math.min(1, (Date.now() - began) / durationMs);
+      const eased = 1 - Math.pow(1 - p, 3);
+      const next = Math.round(from + (value - from) * eased);
+      at.current = next;
+      setShown(next);
+      if (p < 1) frame = requestAnimationFrame(step);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [value, durationMs]);
+
+  return shown;
 }
 
 /** CSS `transition: opacity` stand-in for the reveal sequence. */
@@ -666,51 +761,81 @@ export function Segmented<T extends string>({
   const gold = tone === 'gold';
   return (
     <View style={[{ flexDirection: 'row', gap: 9 }, style]}>
-      {options.map((o) => {
-        const active = o.value === value;
-        return (
-          <Pressable
-            key={o.value}
-            onPress={() => {
-              tapLight();
-              onChange(o.value);
-            }}
-            style={[
-              {
-                flex: 1,
-                minHeight: 62,
-                borderRadius: 12,
-                backgroundColor: 'rgba(0,0,0,0.3)',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 3,
-                borderWidth: 1.5,
-                borderColor: 'rgba(212,165,60,0.2)',
-              },
-              active && {
-                borderColor: gold ? 'rgba(212,165,60,0.9)' : 'rgba(199,90,54,0.9)',
-                backgroundColor: gold ? 'rgba(212,165,60,0.1)' : 'rgba(199,90,54,0.1)',
-              },
-            ]}
-          >
-            <Text
-              style={{
-                fontFamily: F.display,
-                fontSize: 19,
-                lineHeight: 21,
-                letterSpacing: 2,
-                color: active ? (gold ? C.goldText : C.rust) : C.creamMute,
-              }}
-            >
-              {o.label}
-            </Text>
-            {o.caption ? (
-              <Text style={{ fontFamily: F.body, fontSize: 8.5, letterSpacing: 1.5, color: C.muted3 }}>{o.caption}</Text>
-            ) : null}
-          </Pressable>
-        );
-      })}
+      {options.map((o) => (
+        <Segment key={o.value} option={o} active={o.value === value} gold={gold} onPress={() => onChange(o.value)} />
+      ))}
     </View>
+  );
+}
+
+/**
+ * One option. The chosen state is drawn as its own layer and faded in, so moving
+ * between two options reads as the light coming up on one and down on the other
+ * rather than two separate blinks.
+ */
+function Segment<T extends string>({
+  option,
+  active,
+  gold,
+  onPress,
+}: {
+  option: SegmentOption<T>;
+  active: boolean;
+  gold: boolean;
+  onPress: () => void;
+}) {
+  const t = useSharedValue(active ? 1 : 0);
+  React.useEffect(() => {
+    t.value = withTiming(active ? 1 : 0, { duration: 190, easing: Easing.out(Easing.ease) });
+  }, [active, t]);
+
+  const chosen = useAnimatedStyle(() => ({ opacity: t.value }));
+  const label = useAnimatedStyle(() => ({
+    color: interpolateColor(t.value, [0, 1], [C.creamMute, gold ? C.goldText : C.rust]),
+  }));
+
+  return (
+    <Pressable
+      onPress={() => {
+        tapLight();
+        onPress();
+      }}
+      style={({ pressed }) => [
+        {
+          flex: 1,
+          minHeight: 62,
+          borderRadius: 12,
+          backgroundColor: 'rgba(0,0,0,0.3)',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 3,
+          borderWidth: 1.5,
+          borderColor: 'rgba(212,165,60,0.2)',
+        },
+        pressed && { transform: [{ translateY: 1 }] },
+      ]}
+    >
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          StyleSheet.absoluteFill,
+          {
+            margin: -1.5,
+            borderRadius: 12,
+            borderWidth: 1.5,
+            borderColor: gold ? 'rgba(212,165,60,0.9)' : 'rgba(199,90,54,0.9)',
+            backgroundColor: gold ? 'rgba(212,165,60,0.1)' : 'rgba(199,90,54,0.1)',
+          },
+          chosen,
+        ]}
+      />
+      <Animated.Text style={[{ fontFamily: F.display, fontSize: 19, lineHeight: 21, letterSpacing: 2 }, label]}>
+        {option.label}
+      </Animated.Text>
+      {option.caption ? (
+        <Text style={{ fontFamily: F.body, fontSize: 8.5, letterSpacing: 1.5, color: C.muted3 }}>{option.caption}</Text>
+      ) : null}
+    </Pressable>
   );
 }
 

@@ -58,6 +58,23 @@ follow its vocabulary rather than a spec:
 | Stakes panel — purse presets, table minimum, keypad | `src/ui/Terms.tsx` | Same chip and panel language as the side picker; `AmountPad` is a new bottom sheet in the rules-modal idiom (`#0c130e`, gold hairline, `expo-blur` scrim) |
 | Wager controls — scaling ±, MIN/HALF/DOUBLE/¼/ALL IN, live 1× and 5× read-out | `app/scoreboard.tsx` | Replaces the design's fixed −5/+5/+25/ALL IN row. The gold numeral, its size and position are unchanged |
 | Two-phones lobby | `app/online.tsx`, `app/lobby.tsx` | The table code uses the `GAME n` gold gradient at 62 px; seats reuse the scoreboard row |
+
+## Motion the design did not specify
+
+The mock was a set of states, not a film: every transition it *did* pin down is kept
+exactly (see **Timing, kept exactly**). These are the places it said nothing, where a cut
+read as a glitch — each one is a fade or a slide in the same easing vocabulary
+(`ease-out`, 190–420 ms), and none of them delays a tap.
+
+| Motion | Where | Why |
+|---|---|---|
+| The hand is dealt in, 55 ms apart, sliding up into the fan | `src/ui/Cards.tsx` `FanCard` | Five cards appearing at once read as a screenshot; dealt, they read as a hand |
+| Purses count from what they were before the round to what they are now (900 ms, ease-out cubic) | `app/scoreboard.tsx`, `useCountUp` in `kit.tsx` | The money moving *is* the game. The reveal announces the payout; the scoreboard shows it happen |
+| Segmented options cross-fade between chosen and not, label colour included | `src/ui/kit.tsx` `Segment` | Two simultaneous blinks read as a flicker; one light coming up reads as a choice |
+| Seats fade in as somebody sits down, the ✓ scaling over the … | `app/lobby.tsx` | The arrival of the other player is the one thing that lobby is for |
+| The table code breathes (1 → 1.03, 3.2 s) while the seat opposite is empty, and settles when it fills | `app/lobby.tsx`, `useWaitingPulse` | Says "still waiting" without a spinner |
+| Panels, waiting states and the offer of a seat you left lift in 8–12 px | `Appear` in `kit.tsx` | Used where something *arrives*: `Fade` remains for things that toggle |
+| The dropped-link banner drops in, and breathes while it is still dialling | `app/_layout.tsx` | Amber and moving means the app is working on it; rust and still means it wants a tap |
 | Dropped-link banner | `app/_layout.tsx` | One rust line above everything, only when the link is actually broken |
 | Confirm before abandoning | `src/ui/ExitGuard.tsx` | The design had no back button to guard. Same sheet as the rules modal; the safe choice is the gold button and the scrim, abandoning is the quiet rust outline. Replaces the scoreboard's old two-tap arm, which was too easy to trigger twice |
 

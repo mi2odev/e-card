@@ -3,7 +3,7 @@ import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } fro
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C, F } from '../src/theme';
-import { BigButton, CodeField, HelpButton, NameField, Segmented, StatusLine, shadow } from '../src/ui/kit';
+import { Appear, BigButton, CodeField, HelpButton, NameField, Segmented, StatusLine, shadow } from '../src/ui/kit';
 import { TableBackground } from '../src/ui/Radial';
 import { useGame } from '../src/store/useGame';
 import { useNet } from '../src/store/useNet';
@@ -156,7 +156,9 @@ export default function OnlineScreen() {
           </Text>
 
           {resume ? (
-            <View
+            <Appear
+              duration={380}
+              from={12}
               style={{
                 marginTop: 18,
                 borderRadius: 14,
@@ -200,7 +202,7 @@ export default function OnlineScreen() {
                   NO — THAT TABLE IS DONE
                 </Text>
               </Pressable>
-            </View>
+            </Appear>
           ) : null}
 
           <Segmented
@@ -240,7 +242,7 @@ export default function OnlineScreen() {
           />
 
           {onHotspot ? (
-            <View
+            <Appear
               style={{
                 marginTop: 18,
                 paddingVertical: 14,
@@ -269,11 +271,11 @@ export default function OnlineScreen() {
                   PHONE SHARING THE HOTSPOT NEEDS THE BUILT APP; THE OTHER ONE CAN STAY ON EXPO GO.
                 </Text>
               ) : null}
-            </View>
+            </Appear>
           ) : null}
 
           {directHost && !onHotspot ? (
-            <View
+            <Appear
               style={{
                 marginTop: 18,
                 paddingVertical: 14,
@@ -294,11 +296,11 @@ export default function OnlineScreen() {
               <Text style={{ fontFamily: F.body, fontSize: 9, letterSpacing: 1.2, color: C.muted7, lineHeight: 13 }}>
                 NO COMPUTER NEEDED. THE OTHER PHONE ENTERS THIS ADDRESS AND THE CODE ABOVE, ON THE SAME WI-FI.
               </Text>
-            </View>
+            </Appear>
           ) : null}
 
           {needsAddress ? (
-            <View style={{ marginTop: 18 }}>
+            <Appear style={{ marginTop: 18 }}>
               <NameField
                 label={`RELAY ADDRESS · PORT ${DEFAULT_PORT}`}
                 value={address}
@@ -316,7 +318,7 @@ export default function OnlineScreen() {
                   MIDDLE. BUILD THE APP AND THIS PHONE HOSTS THE TABLE ITSELF, WITH NO COMPUTER AT ALL.
                 </Text>
               ) : null}
-            </View>
+            </Appear>
           ) : null}
 
           <View style={{ flex: 1, minHeight: 18 }} />

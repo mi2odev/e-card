@@ -4,9 +4,21 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { C, F, sideColor } from '../src/theme';
-import { AmountPad, BigButton, GradientText, HelpButton, HistoryStrip, MoneyChip, SideMono, StatusLine, shadow } from '../src/ui/kit';
+import {
+  AmountPad,
+  BigButton,
+  GradientText,
+  HelpButton,
+  HistoryStrip,
+  MoneyChip,
+  SideMono,
+  StatusLine,
+  shadow,
+  useCountUp,
+} from '../src/ui/kit';
 import { TableBackground } from '../src/ui/Radial';
 import { bankOf, canSetStake, localPlayer, nameOf, sidePlayerNow, stakeRange, useGame, winsOf } from '../src/store/useGame';
+import type { PlayerKey } from '../src/game/logic';
 import { fmt, isSwapGame, payoutPreview, setNumber, sideOfPlayer, stakeStep } from '../src/game/logic';
 import { netDeal, netSetStake } from '../src/net/actions';
 import { requestExit } from '../src/ui/ExitGuard';
@@ -29,6 +41,13 @@ export default function ScoreboardScreen() {
   const setTo = (v: number) => netSetStake(v);
   // Online, the Slave side names the wager and deals with it; offline the one phone does both.
   const canDeal = !online || localPlayer(state) === slavePlayer;
+
+  // What the purses were before the round that just resolved. Arriving here, the
+  // money is watched moving rather than found already moved.
+  const last = history[history.length - 1];
+  const settled = last && last.g === game - 1 && last.winner ? last : null;
+  const purseBefore = (p: PlayerKey) =>
+    bankOf(state, p) - (settled ? (settled.winner === p ? settled.paid : -settled.paid) : 0);
 
   const leave = () => {
     tapLight();
@@ -147,9 +166,13 @@ export default function ScoreboardScreen() {
                   </Text>
                 </View>
                 <View style={{ alignItems: 'flex-end', gap: 2 }}>
-                  <Text style={{ fontFamily: F.display, fontSize: 25, lineHeight: 26, color: C.creamWarm }}>
-                    {stakesOn ? fmt(bankOf(state, p)) : String(winsOf(state, p))}
-                  </Text>
+                  {stakesOn ? (
+                    <Purse value={bankOf(state, p)} from={purseBefore(p)} />
+                  ) : (
+                    <Text style={{ fontFamily: F.display, fontSize: 25, lineHeight: 26, color: C.creamWarm }}>
+                      {String(winsOf(state, p))}
+                    </Text>
+                  )}
                   <Text style={{ fontFamily: F.body, fontSize: 9, letterSpacing: 1.5, color: C.muted2 }}>
                     {stakesOn ? `${winsOf(state, p)} WON` : 'ROUNDS WON'}
                   </Text>
@@ -346,5 +369,13 @@ function StakeRound({ label, disabled, onPress }: { label: string; disabled?: bo
     >
       <Text style={{ fontFamily: F.display, fontSize: 18, lineHeight: 20, color: C.creamDim }}>{label}</Text>
     </Pressable>
+  );
+}
+
+/** A player's purse, counted from what it was before the last round to what it is now. */
+function Purse({ value, from }: { value: number; from: number }) {
+  const shown = useCountUp(value, from);
+  return (
+    <Text style={{ fontFamily: F.display, fontSize: 25, lineHeight: 26, color: C.creamWarm }}>{fmt(shown)}</Text>
   );
 }

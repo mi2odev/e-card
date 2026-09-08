@@ -1,5 +1,13 @@
 import React, { useEffect } from 'react';
 import { AppState, Pressable, Text, View } from 'react-native';
+import Animated, {
+  cancelAnimation,
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withTiming,
+} from 'react-native-reanimated';
 import { Stack, usePathname, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaInsetsContext, SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -133,39 +141,64 @@ function useLinkBanner(): Banner | null {
 }
 
 function LinkBanner({ text, tone, canRetry, topInset }: Banner & { topInset: number }) {
+  // It drops in rather than appearing, and breathes for as long as it is still
+  // dialling — so a glance tells the player whether anything is being done.
+  const enter = useSharedValue(0);
+  const pulse = useSharedValue(0);
+
+  useEffect(() => {
+    enter.value = withTiming(1, { duration: 260, easing: Easing.out(Easing.ease) });
+  }, [enter]);
+
+  useEffect(() => {
+    if (tone === 'trying') {
+      pulse.value = withRepeat(withTiming(1, { duration: 1100, easing: Easing.inOut(Easing.ease) }), -1, true);
+    } else {
+      cancelAnimation(pulse);
+      pulse.value = withTiming(0, { duration: 200 });
+    }
+  }, [tone, pulse]);
+
+  const motion = useAnimatedStyle(() => ({
+    opacity: enter.value * (1 - 0.3 * pulse.value),
+    transform: [{ translateY: -12 * (1 - enter.value) }],
+  }));
+
   return (
-    <Pressable
-      disabled={!canRetry}
-      onPress={() => {
-        tapLight();
-        retryNow();
-      }}
-      style={({ pressed }) => ({
-        paddingTop: topInset + 6,
-        paddingBottom: 8,
-        paddingHorizontal: 16,
-        backgroundColor:
-          tone === 'trying' ? 'rgba(120,86,20,0.97)' : pressed ? 'rgba(168,58,32,0.98)' : 'rgba(140,45,26,0.98)',
-      })}
-    >
-      <Text style={{ fontFamily: F.bold, fontSize: 10, letterSpacing: 1.8, color: C.creamOnRust, textAlign: 'center' }}>
-        {text}
-      </Text>
-      {canRetry ? (
-        <Text
-          style={{
-            fontFamily: F.body,
-            fontSize: 9,
-            letterSpacing: 2,
-            color: 'rgba(247,233,212,0.72)',
-            textAlign: 'center',
-            marginTop: 3,
-          }}
-        >
-          TAP TO TRY AGAIN
+    <Animated.View style={motion}>
+      <Pressable
+        disabled={!canRetry}
+        onPress={() => {
+          tapLight();
+          retryNow();
+        }}
+        style={({ pressed }) => ({
+          paddingTop: topInset + 6,
+          paddingBottom: 8,
+          paddingHorizontal: 16,
+          backgroundColor:
+            tone === 'trying' ? 'rgba(120,86,20,0.97)' : pressed ? 'rgba(168,58,32,0.98)' : 'rgba(140,45,26,0.98)',
+        })}
+      >
+        <Text style={{ fontFamily: F.bold, fontSize: 10, letterSpacing: 1.8, color: C.creamOnRust, textAlign: 'center' }}>
+          {text}
         </Text>
-      ) : null}
-    </Pressable>
+        {canRetry ? (
+          <Text
+            style={{
+              fontFamily: F.body,
+              fontSize: 9,
+              letterSpacing: 2,
+              color: 'rgba(247,233,212,0.72)',
+              textAlign: 'center',
+              marginTop: 3,
+            }}
+          >
+            TAP TO TRY AGAIN
+          </Text>
+        ) : null}
+      </Pressable>
+    </Animated.View>
   );
 }
 
