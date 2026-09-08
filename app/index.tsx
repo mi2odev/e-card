@@ -18,6 +18,7 @@ import {
   useKeyboard,
 } from '../src/ui/kit';
 import { Glow, TableBackground } from '../src/ui/Radial';
+import { CreditsLine } from '../src/ui/Credits';
 import { useGame } from '../src/store/useGame';
 import { useNet } from '../src/store/useNet';
 import { resumeSession } from '../src/net/session';
@@ -201,6 +202,7 @@ export default function TitleScreen() {
             >
               12 ROUNDS · 5 CARDS EACH · THE SLAVE PAYS 5×
             </Text>
+            <CreditsLine style={{ marginTop: 2 }} />
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
