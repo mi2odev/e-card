@@ -16,6 +16,7 @@ import { C, F } from '../src/theme';
 import { useGame, type Phase } from '../src/store/useGame';
 import { useNet } from '../src/store/useNet';
 import { STATUS_WORD } from '../src/net/protocol';
+import { ExitGuard } from '../src/ui/ExitGuard';
 
 export default function RootLayout() {
   const [loaded] = useFonts({
@@ -34,6 +35,7 @@ export default function RootLayout() {
         <>
           <NetRouter />
           <LinkBanner />
+          <ExitGuard />
           <Stack
             screenOptions={{
               headerShown: false,

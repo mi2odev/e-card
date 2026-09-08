@@ -116,6 +116,7 @@ export default function EndScreen() {
           label={online ? 'LEAVE THE TABLE' : 'BACK TO TITLE'}
           onPress={() => {
             if (online) stopSession('left the table');
+            useGame.getState().endMatch();
             router.replace('/');
           }}
           style={{ width: '100%', marginTop: 10 }}

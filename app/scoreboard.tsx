@@ -9,14 +9,14 @@ import { TableBackground } from '../src/ui/Radial';
 import { bankOf, canSetStake, localPlayer, nameOf, sidePlayerNow, stakeRange, useGame, winsOf } from '../src/store/useGame';
 import { fmt, isSwapGame, payoutPreview, setNumber, sideOfPlayer, stakeStep } from '../src/game/logic';
 import { netDeal, netSetStake } from '../src/net/actions';
-import { stopSession } from '../src/net/session';
+import { requestExit } from '../src/ui/ExitGuard';
 import { tapLight, tick } from '../src/haptics';
 
 export default function ScoreboardScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const state = useGame();
-  const { game, stakesOn, stake, history, quitArm, resolvedStart, netRole, quitTap } = state;
+  const { game, stakesOn, stake, history, resolvedStart, netRole } = state;
   const [padOpen, setPadOpen] = useState(false);
 
   const slavePlayer = sidePlayerNow(state, 'slv');
@@ -32,12 +32,7 @@ export default function ScoreboardScreen() {
 
   const leave = () => {
     tapLight();
-    if (online) {
-      stopSession('left the table');
-      router.replace('/');
-      return;
-    }
-    if (quitTap() === 'quit') router.replace('/');
+    requestExit();
   };
 
   return (
@@ -68,15 +63,15 @@ export default function ScoreboardScreen() {
                 paddingRight: 15,
                 borderRadius: 999,
                 borderWidth: 1,
-                borderColor: quitArm ? 'rgba(199,90,54,0.75)' : 'rgba(212,165,60,0.28)',
-                backgroundColor: quitArm ? 'rgba(199,90,54,0.16)' : 'rgba(0,0,0,0.28)',
+                borderColor: 'rgba(212,165,60,0.28)',
+                backgroundColor: pressed ? 'rgba(199,90,54,0.16)' : 'rgba(0,0,0,0.28)',
               },
               pressed && { transform: [{ translateY: 1 }] },
             ]}
           >
-            <Text style={{ fontFamily: F.display, fontSize: 16, lineHeight: 17, color: quitArm ? C.rustText : C.muted }}>✕</Text>
-            <Text style={{ fontFamily: F.bold, fontSize: 10, letterSpacing: 2, color: quitArm ? C.rustText : C.muted }}>
-              {online ? 'LEAVE THE TABLE' : quitArm ? 'TAP AGAIN TO ABANDON' : 'ABANDON MATCH'}
+            <Text style={{ fontFamily: F.display, fontSize: 16, lineHeight: 17, color: C.muted }}>✕</Text>
+            <Text style={{ fontFamily: F.bold, fontSize: 10, letterSpacing: 2, color: C.muted }}>
+              {online ? 'LEAVE THE TABLE' : 'ABANDON MATCH'}
             </Text>
           </Pressable>
           <HelpButton />
