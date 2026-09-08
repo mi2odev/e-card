@@ -1,15 +1,22 @@
 /**
- * Bluetooth LE table.
+ * Bluetooth table — two phones and nothing else. No Wi-Fi network, no router,
+ * no relay, no internet.
  *
- * The host advertises the E-Card service under its room code; the guest scans
- * for that code and connects. Messages travel as chunked GATT writes and
- * notifications (see ble/chunks.ts).
+ * Built on `expo-nearby-connections`, which is Google Nearby Connections on
+ * Android and Apple's MultipeerConnectivity on iOS. Both of those negotiate
+ * their own link — Bluetooth, BLE, or a direct Wi-Fi leg between the two
+ * handsets — so this works with no network joined at all.
  *
- * Both roles need native BLE, which Expo Go does not ship — `availability()`
- * says so plainly and the lobby offers Wi-Fi instead. In a development build
- * that includes `react-native-ble-plx` the guest role works as written; hosting
- * additionally needs a peripheral-capable module registered through
- * `registerBlePeripheral()`, because ble-plx has no peripheral mode.
+ * Two things to know:
+ *
+ *   • It needs a built app. Expo Go carries no native code of ours, so
+ *     `availability()` says so and the lobby offers Wi-Fi instead.
+ *   • Android talks to Android and iOS to iOS. The two frameworks are not
+ *     interoperable, and the library does not pretend otherwise.
+ *
+ * The host advertises as `ECARD-<code>` and accepts the first phone that asks
+ * for that exact name; the guest scans for it. The room code is therefore the
+ * whole of the pairing — there is nothing to type but four characters.
  */
 
 import { decode, encode, type NetMessage } from './protocol';
@@ -23,218 +30,251 @@ import {
   type LinkEvents,
   type TransportDriver,
 } from './link';
-import {
-  SERVICE_UUID,
-  RX_UUID,
-  TX_UUID,
-  getBlePeripheral,
-  type BleCentral,
-  type BleDevice,
-} from './ble/bridge';
-import { ChunkAssembler, decodeChunk, encodeChunk, splitMessage } from './ble/chunks';
 import { errorText } from './ws/tcpHost';
 
-/** Advertised as "ECARD-ABCD" so a scan can match on the room code alone. */
+/** Advertised name, so a scan can match on the room code alone. */
 export const advertisedName = (code: string) => `ECARD-${code.toUpperCase()}`;
 
-const NEEDS_DEV_BUILD =
-  'BLUETOOTH NEEDS A DEVELOPMENT BUILD — EXPO GO CANNOT LOAD NATIVE BLE. USE WI-FI.';
-const NEEDS_PERIPHERAL =
-  'HOSTING OVER BLUETOOTH NEEDS A PERIPHERAL-CAPABLE BLE MODULE. USE WI-FI, OR JOIN INSTEAD.';
+/** 1-to-1. A table seats two. */
+const POINT_TO_POINT = 3;
 
-type BlePlx = {
-  BleManager: new () => {
-    state: () => Promise<string>;
-    onStateChange: (cb: (s: string) => void, emitNow: boolean) => { remove: () => void };
-    startDeviceScan: (
-      uuids: string[] | null,
-      opts: unknown,
-      cb: (err: unknown, device: { id: string; name: string | null; localName?: string | null } | null) => void,
-    ) => void;
-    stopDeviceScan: () => void;
-    connectToDevice: (id: string) => Promise<{
-      discoverAllServicesAndCharacteristics: () => Promise<unknown>;
-      monitorCharacteristicForService: (
-        service: string,
-        char: string,
-        cb: (err: unknown, c: { value?: string | null } | null) => void,
-      ) => { remove: () => void };
-      writeCharacteristicWithResponseForService: (
-        service: string,
-        char: string,
-        value: string,
-      ) => Promise<unknown>;
-      cancelConnection: () => Promise<unknown>;
-    }>;
-  };
+/** How long a guest hunts for the table before giving up. */
+const DISCOVER_TIMEOUT_MS = 25_000;
+
+type Peer = { peerId: string; name: string };
+type Unsubscribe = () => void;
+
+type Nearby = {
+  startAdvertise: (name: string, strategy?: number) => Promise<string>;
+  stopAdvertise: () => Promise<void>;
+  startDiscovery: (name: string, strategy?: number) => Promise<string>;
+  stopDiscovery: () => Promise<void>;
+  requestConnection: (peerId: string) => Promise<void>;
+  acceptConnection: (peerId: string) => Promise<void>;
+  disconnect: (peerId?: string) => Promise<void>;
+  sendText: (peerId: string, text: string) => Promise<void>;
+  onPeerFound: (cb: (p: Peer) => void) => Unsubscribe;
+  onInvitationReceived: (cb: (p: Peer) => void) => Unsubscribe;
+  onConnected: (cb: (p: Peer) => void) => Unsubscribe;
+  onDisconnected: (cb: (p: { peerId: string }) => void) => Unsubscribe;
+  onTextReceived: (cb: (p: { peerId: string; text: string }) => void) => Unsubscribe;
 };
 
-const loadPlx = () => optionalModule<BlePlx>(() => require('react-native-ble-plx'));
+const loadNearby = () =>
+  optionalModule<Nearby>(() => {
+    const mod = require('expo-nearby-connections') as Nearby | { default?: Nearby };
+    const api = (mod as { default?: Nearby }).default ?? (mod as Nearby);
+    // Present but inert is the Expo Go case, and it must read as unavailable.
+    return typeof api?.startAdvertise === 'function' ? api : null;
+  });
 
-/** Adapts `react-native-ble-plx` to the central half of the bridge. */
-function makeCentral(): BleCentral | null {
-  const plx = loadPlx();
-  if (!plx) return null;
-  const manager = new plx.BleManager();
-  let device: Awaited<ReturnType<typeof manager.connectToDevice>> | null = null;
-  let monitor: { remove: () => void } | null = null;
+/** Expo Go carries no native modules of ours, whatever is in package.json. */
+const inExpoGo = () =>
+  optionalModule<boolean>(() => {
+    const constants = (require('expo-constants') as { default?: { executionEnvironment?: string } }).default;
+    return constants?.executionEnvironment === 'storeClient' ? true : null;
+  }) === true;
 
+const NEEDS_BUILD = 'BLUETOOTH NEEDS THE BUILT APP — EXPO GO CARRIES NO NATIVE CODE. USE WI-FI, OR BUILD IT.';
+
+/* ------------------------------------------------------------- permissions */
+
+/**
+ * Android 12+ gates scanning, advertising and connecting behind runtime
+ * permissions; older versions gate the same thing behind location. iOS prompts
+ * on its own using the strings the config plugin writes into Info.plist.
+ */
+async function askAndroid(): Promise<string | null> {
+  const rn = optionalModule<{
+    Platform: { OS: string; Version: number };
+    PermissionsAndroid: {
+      requestMultiple: (perms: string[]) => Promise<Record<string, string>>;
+      RESULTS: { GRANTED: string };
+    };
+  }>(() => require('react-native'));
+  if (!rn || rn.Platform.OS !== 'android') return null;
+
+  const modern = Number(rn.Platform.Version) >= 31;
+  const wanted = modern
+    ? [
+        'android.permission.BLUETOOTH_SCAN',
+        'android.permission.BLUETOOTH_ADVERTISE',
+        'android.permission.BLUETOOTH_CONNECT',
+        'android.permission.ACCESS_FINE_LOCATION',
+        'android.permission.NEARBY_WIFI_DEVICES',
+      ]
+    : ['android.permission.ACCESS_FINE_LOCATION', 'android.permission.ACCESS_COARSE_LOCATION'];
+
+  try {
+    const granted = await rn.PermissionsAndroid.requestMultiple(wanted);
+    const ok = rn.PermissionsAndroid.RESULTS.GRANTED;
+    // NEARBY_WIFI_DEVICES only exists on Android 13+, so a refusal there is not
+    // fatal on 12 — the Bluetooth trio is what actually has to be granted.
+    const required = modern
+      ? ['android.permission.BLUETOOTH_SCAN', 'android.permission.BLUETOOTH_ADVERTISE', 'android.permission.BLUETOOTH_CONNECT']
+      : ['android.permission.ACCESS_FINE_LOCATION'];
+    const missing = required.filter((p) => granted[p] !== ok);
+    if (missing.length) {
+      return 'BLUETOOTH PERMISSION WAS REFUSED — ALLOW NEARBY DEVICES FOR E-CARD IN ANDROID SETTINGS';
+    }
+    return null;
+  } catch (e) {
+    return errorText(e).toUpperCase();
+  }
+}
+
+/* -------------------------------------------------------------- the links */
+
+/** Everything both roles share once a peer is connected. */
+function makeLink(api: Nearby, peerId: () => string | null, subs: Unsubscribe[], stop: () => void): Link {
   return {
-    ready: () =>
-      new Promise<void>((resolve, reject) => {
-        const sub = manager.onStateChange((s) => {
-          if (s === 'PoweredOn') {
-            sub.remove();
-            resolve();
-          } else if (s === 'Unsupported' || s === 'Unauthorized') {
-            sub.remove();
-            reject(new Error(`bluetooth ${s.toLowerCase()}`));
-          }
-        }, true);
-      }),
-    scan: async (onFound) => {
-      manager.startDeviceScan([SERVICE_UUID], null, (err, d) => {
-        if (err || !d) return;
-        onFound({ id: d.id, name: d.localName ?? d.name ?? null });
-      });
+    send: (msg) => {
+      const id = peerId();
+      if (id) void api.sendText(id, encode(msg)).catch(() => undefined);
     },
-    stopScan: () => manager.stopDeviceScan(),
-    connect: async (id) => {
-      device = await manager.connectToDevice(id);
-      await device.discoverAllServicesAndCharacteristics();
-    },
-    subscribe: async (onChunk) => {
-      if (!device) throw new Error('not connected');
-      monitor = device.monitorCharacteristicForService(SERVICE_UUID, TX_UUID, (err, c) => {
-        if (err || !c?.value) return;
-        onChunk(c.value);
-      });
-    },
-    write: async (value) => {
-      if (!device) throw new Error('not connected');
-      await device.writeCharacteristicWithResponseForService(SERVICE_UUID, RX_UUID, value);
-    },
-    disconnect: () => {
-      monitor?.remove();
-      monitor = null;
-      void device?.cancelConnection().catch(() => undefined);
-      device = null;
+    info: { mode: 'bluetooth', hint: 'PHONE TO PHONE · NO NETWORK' },
+    close: () => {
+      subs.forEach((off) => off());
+      subs.length = 0;
+      stop();
+      void api.disconnect().catch(() => undefined);
     },
   };
 }
 
-/** Serialises chunked sends so writes never interleave between two messages. */
-function makeSender(write: (value: string) => Promise<void>, onError: (e: unknown) => void) {
-  let nextId = 1;
-  let queue: Promise<void> = Promise.resolve();
-  return (msg: NetMessage) => {
-    const chunks = splitMessage(nextId++, encode(msg));
-    queue = queue
-      .then(async () => {
-        for (const c of chunks) await write(encodeChunk(c));
-      })
-      .catch(onError);
-  };
+function listen(api: Nearby, ev: LinkEvents, peer: { id: string | null }, subs: Unsubscribe[]) {
+  subs.push(
+    api.onTextReceived(({ text }) => {
+      const msg = decode(text);
+      if (msg) ev.onMessage(msg);
+    }),
+  );
+  subs.push(
+    api.onDisconnected(() => {
+      peer.id = null;
+      ev.onMessage({ t: 'peer', state: 'left' });
+      ev.onStatus('waiting');
+    }),
+  );
 }
 
 async function host(opts: HostOptions, ev: LinkEvents): Promise<Link> {
-  const peripheral = getBlePeripheral();
-  if (!peripheral) {
-    ev.onStatus('error', loadPlx() ? NEEDS_PERIPHERAL : NEEDS_DEV_BUILD);
+  const api = loadNearby();
+  if (!api) {
+    ev.onStatus('error', NEEDS_BUILD);
     return deadLink;
   }
 
   ev.onStatus('starting');
-  const assembler = new ChunkAssembler();
-
-  peripheral.onWrite((value) => {
-    const full = assembler.push(decodeChunk(value));
-    if (!full) return;
-    const msg = decode(full);
-    if (msg) ev.onMessage(msg);
-  });
-  peripheral.onCentralConnected(() => {
-    ev.onStatus('connected');
-    ev.onMessage({ t: 'peer', state: 'joined' });
-  });
-  peripheral.onCentralDisconnected(() => {
-    ev.onMessage({ t: 'peer', state: 'left' });
-    ev.onStatus('waiting');
-  });
-
-  try {
-    await peripheral.ready();
-    await peripheral.advertise(advertisedName(opts.code));
-    ev.onStatus('waiting');
-  } catch (e) {
-    ev.onStatus('error', errorText(e));
+  const denied = await askAndroid();
+  if (denied) {
+    ev.onStatus('error', denied);
     return deadLink;
   }
 
-  return {
-    send: makeSender((v) => peripheral.notify(v), (e) => ev.onStatus('error', errorText(e))),
-    info: { mode: 'bluetooth', hint: advertisedName(opts.code) },
-    close: () => peripheral.stop(),
-  };
+  const name = advertisedName(opts.code);
+  const peer: { id: string | null } = { id: null };
+  const subs: Unsubscribe[] = [];
+
+  // Anyone who dialled this exact name has the code, which is the only
+  // credential a table has. Accept the first, ignore the rest.
+  subs.push(
+    api.onInvitationReceived(({ peerId }) => {
+      if (peer.id) return;
+      void api.acceptConnection(peerId).catch((e) => ev.onStatus('error', errorText(e).toUpperCase()));
+    }),
+  );
+  subs.push(
+    api.onConnected(({ peerId }) => {
+      if (peer.id) return;
+      peer.id = peerId;
+      ev.onStatus('connected');
+      ev.onMessage({ t: 'peer', state: 'joined' });
+    }),
+  );
+  listen(api, ev, peer, subs);
+
+  try {
+    await api.startAdvertise(name, POINT_TO_POINT);
+    ev.onStatus('waiting');
+  } catch (e) {
+    subs.forEach((off) => off());
+    ev.onStatus('error', errorText(e).toUpperCase());
+    return deadLink;
+  }
+
+  return makeLink(api, () => peer.id, subs, () => void api.stopAdvertise().catch(() => undefined));
 }
 
 async function join(opts: JoinOptions, ev: LinkEvents): Promise<Link> {
-  const central = makeCentral();
-  if (!central) {
-    ev.onStatus('error', NEEDS_DEV_BUILD);
+  const api = loadNearby();
+  if (!api) {
+    ev.onStatus('error', NEEDS_BUILD);
     return deadLink;
   }
 
   ev.onStatus('connecting');
-  const wanted = advertisedName(opts.code);
-  const assembler = new ChunkAssembler();
-
-  try {
-    await central.ready();
-    const found = await new Promise<BleDevice>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        central.stopScan();
-        reject(new Error(`no table named ${wanted} in range`));
-      }, 20_000);
-      void central.scan((d) => {
-        if ((d.name ?? '').toUpperCase() !== wanted) return;
-        clearTimeout(timer);
-        central.stopScan();
-        resolve(d);
-      });
-    });
-
-    await central.connect(found.id);
-    await central.subscribe((value) => {
-      const full = assembler.push(decodeChunk(value));
-      if (!full) return;
-      const msg = decode(full);
-      if (msg) ev.onMessage(msg);
-    });
-    ev.onStatus('connected');
-  } catch (e) {
-    central.disconnect();
-    ev.onStatus('error', errorText(e));
+  const denied = await askAndroid();
+  if (denied) {
+    ev.onStatus('error', denied);
     return deadLink;
   }
 
-  return {
-    send: makeSender((v) => central.write(v), (e) => ev.onStatus('error', errorText(e))),
-    info: { mode: 'bluetooth', hint: wanted },
-    close: () => central.disconnect(),
-  };
+  const wanted = advertisedName(opts.code);
+  const peer: { id: string | null } = { id: null };
+  const subs: Unsubscribe[] = [];
+  let asked = false;
+
+  const timer = setTimeout(() => {
+    if (!peer.id) {
+      ev.onStatus('error', `NO TABLE ON CODE ${opts.code} IN RANGE — CHECK THE CODE, AND THAT THE OTHER PHONE HAS PRESSED "OPEN THE TABLE"`);
+    }
+  }, DISCOVER_TIMEOUT_MS);
+
+  subs.push(
+    api.onPeerFound(({ peerId, name }) => {
+      if (asked || (name ?? '').toUpperCase() !== wanted) return;
+      asked = true;
+      void api.stopDiscovery().catch(() => undefined);
+      void api.requestConnection(peerId).catch((e) => {
+        asked = false;
+        ev.onStatus('error', errorText(e).toUpperCase());
+      });
+    }),
+  );
+  subs.push(
+    api.onConnected(({ peerId }) => {
+      clearTimeout(timer);
+      peer.id = peerId;
+      ev.onStatus('connected');
+    }),
+  );
+  listen(api, ev, peer, subs);
+
+  try {
+    await api.startDiscovery(advertisedName(opts.code), POINT_TO_POINT);
+  } catch (e) {
+    clearTimeout(timer);
+    subs.forEach((off) => off());
+    ev.onStatus('error', errorText(e).toUpperCase());
+    return deadLink;
+  }
+
+  return makeLink(api, () => peer.id, subs, () => {
+    clearTimeout(timer);
+    void api.stopDiscovery().catch(() => undefined);
+  });
 }
 
 async function availability(): Promise<Availability> {
-  if (!loadPlx()) return { ok: false, reason: NEEDS_DEV_BUILD };
-  if (!getBlePeripheral()) return { ok: true, reason: NEEDS_PERIPHERAL };
-  return { ok: true };
+  if (loadNearby()) return { ok: true };
+  return { ok: false, reason: inExpoGo() ? NEEDS_BUILD : 'BLUETOOTH IS NOT AVAILABLE IN THIS BUILD. USE WI-FI.' };
 }
 
 export const bluetoothDriver: TransportDriver = {
   kind: 'bluetooth',
   label: 'BLUETOOTH',
-  blurb: 'NO NETWORK AT ALL · NEEDS A DEV BUILD',
+  blurb: 'NO NETWORK AT ALL · NEEDS THE BUILT APP',
   availability,
   host,
   join,

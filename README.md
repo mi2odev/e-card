@@ -129,27 +129,32 @@ Three pieces of platform config make this work, and are already in `app.json`:
 | `usesCleartextTraffic: true` (via `expo-build-properties`) | Android 9+ blocks non-TLS traffic in release builds, which would kill `ws://` to a phone on the LAN |
 | `NSAllowsLocalNetworking: true` | The same problem on iOS — App Transport Security, scoped here to local addresses only |
 | `NSLocalNetworkUsageDescription` | iOS 14+ refuses local network access without a reason string to show the user |
+| `NSBluetoothAlwaysUsageDescription`, `NSBonjourServices` (via the `expo-nearby-connections` plugin) | MultipeerConnectivity needs both before iOS will let it advertise |
 
 If the host phone cannot open the port for any reason, it falls back to the relay below
 rather than failing, and the lobby says which mode you got.
 
-### Bluetooth
+### Bluetooth — two phones, no network at all
 
-Bluetooth needs native BLE, which Expo Go does not ship, so the app says so plainly and
-points you at Wi-Fi. In a development build:
+No Wi-Fi to join, no router, no relay. Built on `expo-nearby-connections`, which is Google
+Nearby Connections on Android and Apple's MultipeerConnectivity on iOS; both negotiate
+their own link between the handsets (Bluetooth, BLE, or a direct Wi-Fi leg), so nothing
+has to exist around them.
 
-- **Joining** works with [`react-native-ble-plx`](https://github.com/dotintent/react-native-ble-plx)
-  — the phone scans for `ECARD-<code>` and connects.
-- **Hosting** additionally needs a peripheral-capable module, because ble-plx has no
-  peripheral mode. Register one at startup:
+1. Both phones have the **built app** — Expo Go carries no native code, so it offers Wi-Fi
+   instead and says why.
+2. Phone A: **TWO PHONES → OPEN → BLUETOOTH**. It advertises as `ECARD-<code>`.
+3. Phone B: **TWO PHONES → JOIN → BLUETOOTH**, and enter that code.
 
-  ```ts
-  import { registerBlePeripheral } from './src/net/ble/bridge';
-  registerBlePeripheral(() => myPeripheralAdapter); // see the BlePeripheral type
-  ```
+There is no address to type — the four-character code is the whole of the pairing.
 
-Messages are chunked to fit a GATT characteristic and reassembled on the far side
-(`src/net/ble/chunks.ts`, covered by the self-test).
+**Android pairs with Android, iOS with iOS.** The two underlying frameworks are not
+interoperable, and this does not paper over that.
+
+Android asks for nearby-device permission the first time (scan, advertise, connect, and
+location, which Android still ties to Bluetooth scanning). Refuse it and the lobby says so
+rather than failing quietly. iOS prompts on its own, using the strings the config plugin
+writes into `Info.plist`.
 
 ## Your artwork
 
@@ -197,8 +202,7 @@ session.ts     host authority: broadcast snapshots, apply guest intents
 actions.ts     what screens call; host acts, guest asks
 link.ts        the Link / TransportDriver interfaces
 wifi.ts        direct-host or relay, both plain WebSocket
-bluetooth.ts   BLE transport over the bridge below
-ble/           bridge.ts (the native surface it needs), chunks.ts (GATT-sized framing)
+bluetooth.ts   phone-to-phone over Nearby Connections / MultipeerConnectivity
 ws/            frames.ts (RFC 6455 codec), hostServer.ts, tcpHost.ts
 ```
 
