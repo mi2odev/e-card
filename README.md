@@ -111,15 +111,15 @@ above. The app detects this and switches automatically; the lobby says which mod
 
 ### Hotspot — no router, no network to join
 
-**TWO PHONES → WI-FI → HOTSPOT.** One phone shares its connection, the other joins that
+**TWO PHONES → HOTSPOT.** One phone shares its connection, the other joins that
 network, and the table is served over it. No router, no computer, no relay — and nothing
 to type but the four-character code.
 
 1. Phone A turns on **Personal Hotspot** (iPhone) or **Mobile Hotspot** (Android).
 2. Phone B joins that network in Wi-Fi settings. If it asks about staying connected
    without internet, say yes.
-3. Phone A: **OPEN → WI-FI → HOTSPOT**, and reads out the code.
-4. Phone B: **JOIN → WI-FI → HOTSPOT**, types the code, and presses join.
+3. Phone A: **OPEN → HOTSPOT**, and reads out the code.
+4. Phone B: **JOIN → HOTSPOT**, types the code, and presses join.
 
 **The phone sharing the hotspot is the one that opens the table** — and it needs the built
 app, since serving means opening a port. The phone joining can stay on Expo Go.
@@ -188,7 +188,6 @@ Three pieces of platform config make this work, and are already in `app.json`:
 | `usesCleartextTraffic: true` (via `expo-build-properties`) | Android 9+ blocks non-TLS traffic in release builds, which would kill `ws://` to a phone on the LAN |
 | `NSAllowsLocalNetworking: true` | The same problem on iOS — App Transport Security, scoped here to local addresses only |
 | `NSLocalNetworkUsageDescription` | iOS 14+ refuses local network access without a reason string to show the user |
-| `NSBluetoothAlwaysUsageDescription`, `NSBonjourServices` (via the `expo-nearby-connections` plugin) | MultipeerConnectivity needs both before iOS will let it advertise |
 
 If the host phone cannot open the port for any reason, it falls back to the relay below
 rather than failing, and the lobby says which mode you got.
@@ -199,28 +198,6 @@ is a legacy `ReactContextBaseJavaModule`, which the New Architecture interop lay
 known to fail. It is listed under `expo.doctor.reactNativeDirectoryCheck.exclude` so the
 check passes. If a build ever does trip over it, that exclusion is the first thing to
 revisit.
-
-### Bluetooth — two phones, no network at all
-
-No Wi-Fi to join, no router, no relay. Built on `expo-nearby-connections`, which is Google
-Nearby Connections on Android and Apple's MultipeerConnectivity on iOS; both negotiate
-their own link between the handsets (Bluetooth, BLE, or a direct Wi-Fi leg), so nothing
-has to exist around them.
-
-1. Both phones have the **built app** — Expo Go carries no native code, so it offers Wi-Fi
-   instead and says why.
-2. Phone A: **TWO PHONES → OPEN → BLUETOOTH**. It advertises as `ECARD-<code>`.
-3. Phone B: **TWO PHONES → JOIN → BLUETOOTH**, and enter that code.
-
-There is no address to type — the four-character code is the whole of the pairing.
-
-**Android pairs with Android, iOS with iOS.** The two underlying frameworks are not
-interoperable, and this does not paper over that.
-
-Android asks for nearby-device permission the first time (scan, advertise, connect, and
-location, which Android still ties to Bluetooth scanning). Refuse it and the lobby says so
-rather than failing quietly. iOS prompts on its own, using the strings the config plugin
-writes into `Info.plist`.
 
 ## Your artwork
 
@@ -242,7 +219,7 @@ app/                 one file per screen, expo-router
   _layout.tsx        fonts + stack, the phase router and the dropped-link banner
   index.tsx          Title
   setup.tsx          The table is set — pass & play terms
-  online.tsx         Two phones — host or join, Wi-Fi or Bluetooth
+  online.tsx         Two phones — open or join a table, on a network or a hotspot
   lobby.tsx          Table code, seats, and the host's terms
   scoreboard.tsx     Game n of twelve + the wager
   handoff.tsx        Pass the device (pass & play only)
@@ -269,7 +246,6 @@ actions.ts     what screens call; host acts, guest asks
 link.ts        the Link / TransportDriver interfaces
 wifi.ts        direct-host, relay, or a table on one phone's hotspot — all plain WebSocket
 discover.ts    the little that can be guessed about where the other phone is
-bluetooth.ts   phone-to-phone over Nearby Connections / MultipeerConnectivity
 ws/            frames.ts (RFC 6455 codec), hostServer.ts, tcpHost.ts
 ```
 
