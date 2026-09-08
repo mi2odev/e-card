@@ -8,7 +8,7 @@ import { TableBackground } from '../src/ui/Radial';
 import { useGame } from '../src/store/useGame';
 import { DRIVERS, startSession } from '../src/net/session';
 import { wifiHostsItself } from '../src/net/wifi';
-import { defaultRelayAddress } from '../src/net/discover';
+import { defaultRelayAddress, localIpAddress } from '../src/net/discover';
 import { DEFAULT_PORT, isCompleteRoomCode, makeRoomCode, normalizeRoomCode } from '../src/net/protocol';
 import type { TransportKind } from '../src/net/link';
 import { tapLight } from '../src/haptics';
@@ -28,6 +28,7 @@ export default function OnlineScreen() {
   const [reason, setReason] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [ownIp, setOwnIp] = useState('');
 
   // Only the host invents a code; the guest types the one they were shown.
   const [hostCode] = useState(code);
@@ -37,6 +38,7 @@ export default function OnlineScreen() {
 
   useEffect(() => {
     setAddress((a) => a || defaultRelayAddress());
+    void localIpAddress().then(setOwnIp);
   }, []);
 
   useEffect(() => {
@@ -50,8 +52,10 @@ export default function OnlineScreen() {
   }, [kind]);
 
   const wifi = kind === 'wifi';
-  // A host that can serve the room from this phone needs no relay address.
-  const needsAddress = wifi && !(role === 'host' && wifiHostsItself());
+  // This build can serve the table from the phone itself — no computer needed,
+  // and no relay address to type. The other phone dials this one directly.
+  const directHost = wifi && role === 'host' && wifiHostsItself();
+  const needsAddress = wifi && !directHost;
   const ready = useMemo(
     () => isCompleteRoomCode(code) && (!needsAddress || address.trim().length > 0) && !busy,
     [code, needsAddress, address, busy],
@@ -66,7 +70,9 @@ export default function OnlineScreen() {
         kind,
         role,
         code: normalizeRoomCode(code),
-        address: address.trim(),
+        // Hosting directly, the address is this phone's own — it is what the
+        // other player types, so it has to travel with the session for display.
+        address: directHost ? ownIp : address.trim(),
         port: DEFAULT_PORT,
         name: p1.trim() || (role === 'host' ? 'Host' : 'Challenger'),
       });
@@ -166,6 +172,31 @@ export default function OnlineScreen() {
             editable={role === 'guest'}
             onChangeText={(v) => setCode(normalizeRoomCode(v))}
           />
+
+          {directHost ? (
+            <View
+              style={{
+                marginTop: 18,
+                paddingVertical: 14,
+                paddingHorizontal: 16,
+                borderRadius: 12,
+                backgroundColor: 'rgba(0,0,0,0.3)',
+                borderWidth: 1,
+                borderColor: C.hairline,
+                gap: 6,
+              }}
+            >
+              <Text style={{ fontFamily: F.semi, fontSize: 10, letterSpacing: 2, color: C.muted2 }}>
+                THIS PHONE SERVES THE TABLE
+              </Text>
+              <Text style={{ fontFamily: F.display, fontSize: 26, lineHeight: 28, letterSpacing: 1, color: C.goldBright }}>
+                {ownIp ? `${ownIp}:${DEFAULT_PORT}` : 'FINDING THIS PHONE ON THE WI-FI…'}
+              </Text>
+              <Text style={{ fontFamily: F.body, fontSize: 9, letterSpacing: 1.2, color: C.muted7, lineHeight: 13 }}>
+                NO COMPUTER NEEDED. THE OTHER PHONE ENTERS THIS ADDRESS AND THE CODE ABOVE, ON THE SAME WI-FI.
+              </Text>
+            </View>
+          ) : null}
 
           {needsAddress ? (
             <View style={{ marginTop: 18 }}>

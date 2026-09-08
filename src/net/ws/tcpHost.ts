@@ -81,13 +81,34 @@ export function startTcpHost(port: number, room: string, h: TcpHostHandlers): Tc
 
   let taken = false;
 
+  // The package can be installed and still have no native side behind it — that
+  // is exactly the case inside Expo Go — so every call into it is guarded and a
+  // failure means "no direct hosting here", not a crash.
+  try {
+    return listen(tcp, port, room, h, () => taken, (v) => {
+      taken = v;
+    });
+  } catch (e) {
+    h.onError(errorText(e));
+    return null;
+  }
+}
+
+function listen(
+  tcp: TcpModule,
+  port: number,
+  room: string,
+  h: TcpHostHandlers,
+  isTaken: () => boolean,
+  setTaken: (v: boolean) => void,
+): TcpHostHandle | null {
   const server = tcp.createServer((socket) => {
     // One guest per table. A second dialler is dropped without disturbing the game.
-    if (taken) {
+    if (isTaken()) {
       socket.destroy();
       return;
     }
-    taken = true;
+    setTaken(true);
 
     const wrapped: ByteSocket = {
       write: (bytes) => socket.write(toBase64(bytes), 'base64'),
@@ -101,7 +122,7 @@ export function startTcpHost(port: number, room: string, h: TcpHostHandlers): Tc
       onOpen: h.onGuest,
       onText: h.onText,
       onClose: () => {
-        taken = false;
+        setTaken(false);
         h.onGuestGone();
       },
     });

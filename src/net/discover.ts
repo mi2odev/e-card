@@ -1,4 +1,5 @@
 import Constants from 'expo-constants';
+import * as Network from 'expo-network';
 
 /**
  * A sensible default for the relay address.
@@ -16,4 +17,21 @@ export function defaultRelayAddress(): string {
     if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) return host;
   }
   return '';
+}
+
+const IPV4 = /^\d{1,3}(\.\d{1,3}){3}$/;
+
+/**
+ * This phone's address on the Wi-Fi it is joined to.
+ *
+ * Needed when the host serves the table itself: the other player has to type
+ * this in, and the host is the only one who can tell them what it is.
+ */
+export async function localIpAddress(): Promise<string> {
+  try {
+    const ip = await Network.getIpAddressAsync();
+    return IPV4.test(ip) && ip !== '0.0.0.0' && !ip.startsWith('127.') ? ip : '';
+  } catch {
+    return '';
+  }
 }

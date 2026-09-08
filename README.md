@@ -75,9 +75,44 @@ It has zero dependencies, keeps nothing after a room empties, and is about 250 l
 which is usually the same machine — so most of the time neither player types anything
 but the code.
 
-In a **development build** that includes `react-native-tcp-socket`, the host phone serves
-the room itself and the relay is not needed at all — two phones, no computer, no internet.
-The app detects this and switches automatically; the lobby says which mode you got.
+In any build that is not Expo Go, `react-native-tcp-socket` is live and the host phone
+serves the room itself — the relay is not needed at all. See **Building it as a real app**
+above. The app detects this and switches automatically; the lobby says which mode you got.
+
+### Building it as a real app
+
+Once it is a standalone app rather than a project inside Expo Go, **the laptop goes away**:
+the app bundles `react-native-tcp-socket`, so the host phone opens the port and serves the
+table itself. Two phones on the same Wi-Fi, nothing else.
+
+```bash
+npm install -g eas-cli
+eas login
+eas build --platform android --profile preview   # an APK you can sideload
+```
+
+Install the APK on both phones. Then:
+
+1. Both phones join the **same Wi-Fi**.
+2. Phone A: **TWO PHONES → OPEN**. It shows its own address (`192.168.1.31:8787`) and a
+   four-character code.
+3. Phone B: **TWO PHONES → JOIN**. Type phone A's address and the code.
+4. Phone A presses **BEGIN THE MATCH**.
+
+For iOS you need an Apple Developer account (`eas build --platform ios`), or run
+`--profile development` and install through Xcode. The first launch on iOS asks for local
+network permission — say yes, or the phones cannot see each other.
+
+Three pieces of platform config make this work, and are already in `app.json`:
+
+| Setting | Why |
+|---|---|
+| `usesCleartextTraffic: true` (via `expo-build-properties`) | Android 9+ blocks non-TLS traffic in release builds, which would kill `ws://` to a phone on the LAN |
+| `NSAllowsLocalNetworking: true` | The same problem on iOS — App Transport Security, scoped here to local addresses only |
+| `NSLocalNetworkUsageDescription` | iOS 14+ refuses local network access without a reason string to show the user |
+
+If the host phone cannot open the port for any reason, it falls back to the relay below
+rather than failing, and the lobby says which mode you got.
 
 ### Bluetooth
 
