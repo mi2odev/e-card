@@ -555,6 +555,39 @@ async function testUnreachable() {
     relay.kill();
   }
 
+  // A guest asking for a room nobody hosts — the mistyped-code case.
+  const relay2 = spawn('node', [resolvePath(ROOT, 'server/relay.js')], {
+    env: { ...process.env, PORT: String(PORT + 4) },
+    stdio: ['ignore', 'ignore', 'pipe'],
+  });
+  await sleep(500);
+  try {
+    const W = {
+      session: await import('../src/net/session.ts?device=w'),
+      net: await import('../src/store/useNet.ts?device=w'),
+    };
+    await W.session.startSession({
+      kind: 'wifi',
+      role: 'guest',
+      code: 'Q8A2',
+      address: '127.0.0.1',
+      port: PORT + 4,
+      name: 'Challenger',
+    });
+    await until(
+      () => W.net.useNet.getState().detail.includes('NO TABLE OPEN ON CODE Q8A2'),
+      'a code nobody is hosting is called out by name',
+    );
+    check(
+      !W.net.useNet.getState().detail.includes('LEFT THE TABLE'),
+      'and is not mistaken for a phone leaving',
+      W.net.useNet.getState().detail,
+    );
+    W.session.stopSession();
+  } finally {
+    relay2.kill();
+  }
+
   // Now dial a port with nothing on it at all.
   const E = {
     session: await import('../src/net/session.ts?device=e'),

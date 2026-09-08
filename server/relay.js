@@ -223,6 +223,10 @@ const server = net.createServer((socket) => {
       if (other) {
         other.send(JSON.stringify({ t: 'peer', state: 'joined' }));
         client.send(JSON.stringify({ t: 'peer', state: 'joined' }));
+      } else if (role === 'guest') {
+        // A guest asking for a room nobody is hosting has almost certainly typed
+        // the code wrong. A host alone is just waiting, which needs no comment.
+        client.send(JSON.stringify({ t: 'peer', state: 'alone' }));
       }
     }
 

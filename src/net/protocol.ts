@@ -45,7 +45,9 @@ export type NetMessage =
   | { t: 'welcome'; v: number; name: string }
   | { t: 'state'; seq: number; snap: Snapshot }
   | { t: 'intent'; intent: Intent }
-  | { t: 'peer'; state: 'joined' | 'left' }
+  // 'alone' tells a guest the room it asked for has nobody in it — almost
+  // always a mistyped code, and otherwise a host who has not opened yet.
+  | { t: 'peer'; state: 'joined' | 'left' | 'alone' }
   | { t: 'bye'; reason: string }
   | { t: 'ping'; ts: number }
   | { t: 'pong'; ts: number };
