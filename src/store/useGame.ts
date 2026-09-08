@@ -19,7 +19,7 @@ import {
   stakeStep,
 } from '../game/logic';
 
-/** `winner` is null for a round that ran its three plays without a decision. */
+/** `winner` is null for a round that ran out of cards without a decision. */
 export type HistoryEntry = { g: number; winner: PlayerKey | null; winSide: Side | null; paid: number };
 export type RevealStep = 0 | 1 | 2 | 3 | 4;
 

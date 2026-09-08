@@ -199,7 +199,7 @@ export default function TitleScreen() {
                 color: C.muted7,
               }}
             >
-              12 ROUNDS · 3 PLAYS EACH · THE SLAVE PAYS 5×
+              12 ROUNDS · 5 CARDS EACH · THE SLAVE PAYS 5×
             </Text>
           </View>
         </ScrollView>

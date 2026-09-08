@@ -114,13 +114,17 @@ async function testAnimeShape() {
   console.log('\nRound shape and placing order');
   const { PLAYS_PER_GAME, firstPlacer, isFinalPlay, resolveTurn, emperorPlayer } = await import('../src/game/logic.ts');
 
-  eq(PLAYS_PER_GAME, 3, 'a round is three plays');
-  eq([1, 2, 3].map(isFinalPlay), [false, false, true], 'only the third play ends the round outright');
+  eq(PLAYS_PER_GAME, 5, 'a round is five plays — every card in hand');
+  eq(
+    [1, 2, 3, 4, 5].map(isFinalPlay),
+    [false, false, false, false, true],
+    'only the fifth play ends the round outright',
+  );
 
   // Round 1 opens with the Emperor side; the opener alternates every play and
   // again at the top of each round.
-  eq([1, 2, 3].map((t) => firstPlacer(1, t)), ['emp', 'slv', 'emp'], 'round 1 places E, S, E');
-  eq([1, 2, 3].map((t) => firstPlacer(2, t)), ['slv', 'emp', 'slv'], 'round 2 opens with the Slave side');
+  eq([1, 2, 3, 4, 5].map((t) => firstPlacer(1, t)), ['emp', 'slv', 'emp', 'slv', 'emp'], 'round 1 places E, S, E, S, E');
+  eq([1, 2, 3, 4, 5].map((t) => firstPlacer(2, t)), ['slv', 'emp', 'slv', 'emp', 'slv'], 'round 2 opens with the Slave side');
   eq([1, 2, 3].map((t) => firstPlacer(3, t)), ['emp', 'slv', 'emp'], 'round 3 opens with the Emperor side again');
   eq(
     Array.from({ length: 12 }, (_, i) => firstPlacer(i + 1, 1)),
@@ -132,8 +136,10 @@ async function testAnimeShape() {
   const base = { resolvedStart: 'emperor' as const, game: 1, stake: 20, stakesOn: true, banks };
   const early = resolveTurn({ ...base, turn: 1, empCard: 'C', slvCard: 'C' });
   eq(early.draw === true && early.final, false, 'a drawn first play keeps the round alive');
-  const last = resolveTurn({ ...base, turn: 3, empCard: 'C', slvCard: 'C' });
-  eq(last.draw === true && last.final, true, 'a drawn third play spends the round');
+  const third = resolveTurn({ ...base, turn: 3, empCard: 'C', slvCard: 'C' });
+  eq(third.draw === true && third.final, false, 'and so does a drawn third — the round does not stop there');
+  const last = resolveTurn({ ...base, turn: 5, empCard: 'C', slvCard: 'C' });
+  eq(last.draw === true && last.final, true, 'only a drawn fifth play would spend the round');
 
   // Each side holds 6 rounds of each role across the match.
   const empRounds = Array.from({ length: 12 }, (_, i) => emperorPlayer('emperor', i + 1));
@@ -186,18 +192,37 @@ async function testRoundPlay() {
   eq(g().turn, 3, 'the round moves to its third play');
   eq(g().picker, firstPlacer(1, 3), 'the Emperor side opens play 3');
 
-  // --- third draw spends the round: nobody wins, no money moves
-  const banksBefore = [g().p1pts, g().p2pts];
+  // --- a third draw does not end it either: the round runs to the last card
   g().submitPick('emp', citizen('emp'));
   g().submitPick('slv', citizen('slv'));
-  const spent = g().result;
-  eq(spent?.draw === true && spent.final, true, 'a drawn third play spends the round');
-  eq(finish(), 'scoreboard', 'the spent round is over, not continued');
-  eq([g().p1pts, g().p2pts], banksBefore, 'a spent round moves no money');
-  eq([g().p1w, g().p2w], [0, 0], 'a spent round is a win for neither');
-  eq(g().history, [{ g: 1, winner: null, winSide: null, paid: 0 }], 'the spent round is still on the record');
+  eq(g().result?.draw, true, 'play 3 is drawn as well');
+  eq(finish(), 'handoff', 'and the round carries on past it');
+  eq(g().turn, 4, 'into a fourth play');
+
+  g().submitPick('slv', citizen('slv'));
+  g().submitPick('emp', citizen('emp'));
+  eq(g().result?.draw, true, 'play 4 is drawn too');
+  finish();
+  eq(g().turn, 5, 'and on to the fifth');
+  eq(g().hands!.emp.map((c) => c.t), ['E'], 'the Emperor side is down to its Emperor');
+  eq(g().hands!.slv.map((c) => c.t), ['S'], 'and the Slave side to its Slave');
+
+  // --- so the last play is always Emperor against Slave, and the Slave takes it
+  const banksBefore = [g().p1pts, g().p2pts];
+  eq(g().picker, firstPlacer(1, 5), 'the Emperor side opens the last play');
+  g().submitPick('emp', special('emp'));
+  g().submitPick('slv', special('slv'));
+  const forced = g().result;
+  eq(forced?.draw, false, 'the fifth play cannot be drawn — it decides the round');
+  eq(forced?.draw === false && forced.winSide, 'slv', 'an Emperor that never struck is struck down');
+  eq(forced?.draw === false && forced.mult, 5, 'and the Slave side collects five times the wager');
+  eq(finish(), 'scoreboard', 'the round is over');
+  eq(banksBefore, [100, 100], 'nothing had moved before the last play');
+  eq([g().p1pts, g().p2pts], [0, 200], 'and stalling costs the Emperor side everything it had');
+  eq([g().p1w, g().p2w], [0, 1], 'the round goes to the Slave side');
+  eq(g().history.length, 1, 'the round is on the record');
   eq(g().game, 2, 'the match moves to round 2');
-  eq(g().hands!.emp.length, 2, 'two of the five cards were never revealed');
+  eq(g().hands!.emp.length, 0, 'every card was played');
 
   // --- a decisive play ends the round at once, whatever the play number
   g().deal();
