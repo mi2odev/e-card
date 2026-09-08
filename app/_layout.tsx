@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { Text, View } from 'react-native';
 import { Stack, usePathname, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaInsetsContext, SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFonts } from 'expo-font';
 import { BebasNeue_400Regular } from '@expo-google-fonts/bebas-neue';
 import {
@@ -31,11 +31,28 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <StatusBar style="light" />
-      {loaded ? (
-        <>
-          <NetRouter />
-          <LinkBanner />
-          <ExitGuard />
+      {loaded ? <AppFrame /> : <View style={{ flex: 1, backgroundColor: C.void }} />}
+    </SafeAreaProvider>
+  );
+}
+
+/**
+ * The banner sits *above* the stack in normal layout rather than floating over
+ * it, so it can never cover a screen's own header — the leave button on the
+ * scoreboard, say. Since it then occupies the notch itself, the screens below
+ * are handed a top inset of zero for as long as it is up.
+ */
+function AppFrame() {
+  const insets = useSafeAreaInsets();
+  const banner = useLinkBanner();
+
+  return (
+    <View style={{ flex: 1, backgroundColor: C.tableEdge }}>
+      <NetRouter />
+      <ExitGuard />
+      {banner ? <LinkBanner text={banner} topInset={insets.top} /> : null}
+      <SafeAreaInsetsContext.Provider value={banner ? { ...insets, top: 0 } : insets}>
+        <View style={{ flex: 1 }}>
           <Stack
             screenOptions={{
               headerShown: false,
@@ -45,11 +62,9 @@ export default function RootLayout() {
               contentStyle: { backgroundColor: C.tableEdge },
             }}
           />
-        </>
-      ) : (
-        <View style={{ flex: 1, backgroundColor: C.void }} />
-      )}
-    </SafeAreaProvider>
+        </View>
+      </SafeAreaInsetsContext.Provider>
+    </View>
   );
 }
 
@@ -68,42 +83,43 @@ const PHASE_ROUTE = {
 } as const satisfies Record<Phase, string | null>;
 
 /**
- * A dropped link would otherwise be invisible from the middle of a match, so it
- * gets one line above everything. Only shown when something is actually wrong.
+ * What, if anything, is wrong with the link right now — null when all is well.
+ *
+ * The lobby already reports connection state in its own right, so the banner
+ * stays out of its way there rather than saying the same thing twice.
  */
-function LinkBanner() {
-  const insets = useSafeAreaInsets();
+function useLinkBanner(): string | null {
+  const pathname = usePathname();
   const active = useNet((s) => s.active);
   const status = useNet((s) => s.status);
   const detail = useNet((s) => s.detail);
   const peerHere = useNet((s) => s.peerHere);
   const inMatch = useGame((s) => s.phase !== 'idle' && s.phase !== 'lobby');
 
+  if (!active || pathname === '/lobby') return null;
   const broken = status === 'error' || status === 'closed' || (inMatch && !peerHere);
-  if (!active || !broken) return null;
+  if (!broken) return null;
 
+  // Most specific wins: a driver's own diagnosis, then a failed dial, then a
+  // peer who really was here and left.
+  return (
+    detail ||
+    (status === 'error' ? STATUS_WORD.error : !peerHere ? 'THE OTHER PHONE HAS LEFT THE TABLE' : STATUS_WORD[status])
+  );
+}
+
+function LinkBanner({ text, topInset }: { text: string; topInset: number }) {
   return (
     <View
-      pointerEvents="none"
       style={{
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        zIndex: 100,
-        paddingTop: insets.top + 4,
-        paddingBottom: 7,
+        paddingTop: topInset + 6,
+        paddingBottom: 8,
         paddingHorizontal: 16,
-        backgroundColor: 'rgba(140,45,26,0.94)',
+        backgroundColor: 'rgba(140,45,26,0.98)',
       }}
     >
-      <Text
-        numberOfLines={3}
-        style={{ fontFamily: F.bold, fontSize: 10, letterSpacing: 1.8, color: C.creamOnRust, textAlign: 'center' }}
-      >
-        {/* Most specific wins: a driver's own diagnosis, then a failed dial, then
-            a peer who really was here and left. */}
-        {detail || (status === 'error' ? STATUS_WORD.error : !peerHere ? 'THE OTHER PHONE HAS LEFT THE TABLE' : STATUS_WORD[status])}
+      <Text style={{ fontFamily: F.bold, fontSize: 10, letterSpacing: 1.8, color: C.creamOnRust, textAlign: 'center' }}>
+        {text}
       </Text>
     </View>
   );
