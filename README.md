@@ -134,6 +134,13 @@ Three pieces of platform config make this work, and are already in `app.json`:
 If the host phone cannot open the port for any reason, it falls back to the relay below
 rather than failing, and the lobby says which mode you got.
 
+`npx expo-doctor` reports `react-native-tcp-socket` as *untested on New Architecture*. It
+is a legacy `ReactContextBaseJavaModule`, which the New Architecture interop layer handles;
+"untested" means nobody has filed a report with React Native Directory, not that it is
+known to fail. It is listed under `expo.doctor.reactNativeDirectoryCheck.exclude` so the
+check passes. If a build ever does trip over it, that exclusion is the first thing to
+revisit.
+
 ### Bluetooth — two phones, no network at all
 
 No Wi-Fi to join, no router, no relay. Built on `expo-nearby-connections`, which is Google
