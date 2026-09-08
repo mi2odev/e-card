@@ -21,7 +21,12 @@ spacing, same durations and easing curves, same copy.
 ## Deliberate additions for a real device
 
 1. **Safe-area insets** are added on top of the design's paddings (notch, home bar). At 430×900 with no insets the layout is pixel-identical to the design.
-2. **KeyboardAvoidingView** on Title and Setup so the name fields aren't covered by the keyboard — the browser mock had no keyboard.
+2. **The keyboard**, which the browser mock did not have. `KeyboardAvoidingView` handles iOS;
+   Android with edge-to-edge does not reliably shrink the window, so the screens make their
+   own room: Title folds the card cluster and the wordmark away while a name is being typed
+   (leaving a small E-CARD in their place) and unfolds them when the keyboard goes, and Setup
+   and Two Phones pad the scroll by the keyboard's height and lift the focused field to the
+   top of the screen. Player 1's return key hands the keyboard to Player 2.
 3. **Full-bleed width** instead of the mock's `min(100vw, 430px)` frame. Every internal padding, font size and card size is unchanged, so wider phones stretch exactly as the design did.
 4. `overflow-y: auto` → `ScrollView`; `100dvh` → `flex: 1`.
 5. `min(52vw, 172px)` seal → `useWindowDimensions()` equivalent.
@@ -75,6 +80,8 @@ read as a glitch — each one is a fade or a slide in the same easing vocabulary
 | The table code breathes (1 → 1.03, 3.2 s) while the seat opposite is empty, and settles when it fills | `app/lobby.tsx`, `useWaitingPulse` | Says "still waiting" without a spinner |
 | Panels, waiting states and the offer of a seat you left lift in 8–12 px | `Appear` in `kit.tsx` | Used where something *arrives*: `Fade` remains for things that toggle |
 | The dropped-link banner drops in, and breathes while it is still dialling | `app/_layout.tsx` | Amber and moving means the app is working on it; rust and still means it wants a tap |
+| A field's border warms to gold over 180 ms when it takes focus | `NameField` in `kit.tsx` | The design specified the two colours; the change between them was a jump |
+| The title's hero folds away while a name is being typed | `app/index.tsx` | See **Deliberate additions** above: it is a keyboard fix that happens to be the nicest one to look at |
 | Dropped-link banner | `app/_layout.tsx` | One rust line above everything, only when the link is actually broken |
 | Confirm before abandoning | `src/ui/ExitGuard.tsx` | The design had no back button to guard. Same sheet as the rules modal; the safe choice is the gold button and the scrim, abandoning is the quiet rust outline. Replaces the scoreboard's old two-tap arm, which was too easy to trigger twice |
 

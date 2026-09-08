@@ -1,9 +1,9 @@
-import React from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from 'react-native';
+import React, { useRef } from 'react';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C, F } from '../src/theme';
-import { BigButton, HelpButton, NameField, shadow } from '../src/ui/kit';
+import { BigButton, HelpButton, NameField, shadow, useFieldScroller, useKeyboard } from '../src/ui/kit';
 import { SidePanel, StakesPanel } from '../src/ui/Terms';
 import { TableBackground } from '../src/ui/Radial';
 import { nameOf, useGame } from '../src/store/useGame';
@@ -15,18 +15,27 @@ export default function SetupScreen() {
   const state = useGame();
   const { p1, p2, setP1, setP2, beginMatch } = state;
 
+  // The keyboard covers the bottom half of a phone, and on Android it does not
+  // always shrink the window to say so — so the form makes its own room and
+  // brings whichever field is being typed into up where it can be seen.
+  const { height: keyboard } = useKeyboard();
+  const form = useFieldScroller();
+  const player2 = useRef<TextInput>(null);
+
   return (
     <View style={{ flex: 1, backgroundColor: C.tableEdge }}>
       <TableBackground />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
+          ref={form.ref}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{
             flexGrow: 1,
             paddingHorizontal: 22,
             paddingTop: insets.top,
-            paddingBottom: 20 + insets.bottom,
+            paddingBottom: 20 + insets.bottom + (Platform.OS === 'android' ? keyboard : 0),
           }}
         >
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 12 }}>
@@ -65,9 +74,28 @@ export default function SetupScreen() {
             CONFIRM THE TERMS OF THE MATCH
           </Text>
 
-          <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
-            <NameField compact label="PLAYER 1" value={p1} onChangeText={setP1} placeholder="Player 1" style={{ flex: 1 }} />
-            <NameField compact label="PLAYER 2" value={p2} onChangeText={setP2} placeholder="Player 2" style={{ flex: 1 }} />
+          <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }} onLayout={form.track('names')}>
+            <NameField
+              compact
+              label="PLAYER 1"
+              value={p1}
+              onChangeText={setP1}
+              placeholder="Player 1"
+              style={{ flex: 1 }}
+              onFocus={form.focus('names')}
+              returnKeyType="next"
+              onSubmit={() => player2.current?.focus()}
+            />
+            <NameField
+              compact
+              label="PLAYER 2"
+              value={p2}
+              onChangeText={setP2}
+              placeholder="Player 2"
+              style={{ flex: 1 }}
+              inputRef={player2}
+              onFocus={form.focus('names')}
+            />
           </View>
 
           <SidePanel

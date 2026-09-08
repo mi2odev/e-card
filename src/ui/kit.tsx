@@ -1,9 +1,13 @@
 import React, { useState } from 'react';
 import {
   Image,
+  Keyboard,
+  type KeyboardTypeOptions,
+  type LayoutChangeEvent,
   Modal,
   Platform,
   Pressable,
+  type ReturnKeyTypeOptions,
   ScrollView,
   StyleProp,
   StyleSheet,
@@ -234,6 +238,69 @@ export function useBreathe(durationMs: number, to = 1.14) {
   return useAnimatedStyle(() => ({ transform: [{ scale: 1 + (to - 1) * t.value }] }));
 }
 
+/* ---------------------------------------------------------------- keyboard */
+
+/**
+ * How much of the screen the keyboard is covering, and whether it is up at all.
+ *
+ * Android with edge-to-edge does not always shrink the window for the keyboard,
+ * so a screen cannot assume its own layout has made room. Asking outright is the
+ * only answer that holds on both platforms.
+ */
+export function useKeyboard(): { open: boolean; height: number } {
+  const [height, setHeight] = React.useState(0);
+
+  React.useEffect(() => {
+    // iOS reports before the keyboard moves, which lets the layout travel with
+    // it; Android only reports once it has arrived.
+    const shown = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hidden = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const up = Keyboard.addListener(shown, (e) => setHeight(e.endCoordinates?.height ?? 0));
+    const down = Keyboard.addListener(hidden, () => setHeight(0));
+    return () => {
+      up.remove();
+      down.remove();
+    };
+  }, []);
+
+  return { open: height > 0, height };
+}
+
+/**
+ * Keeps the field being typed into in front of the player.
+ *
+ * Each field says where it sits with `track`, and says when it is focused with
+ * `focus`; the form scrolls it to just under the top of the screen, which is
+ * above the keyboard whatever the keyboard did to the window.
+ */
+export function useFieldScroller() {
+  const ref = React.useRef<ScrollView>(null);
+  const spots = React.useRef<Record<string, number>>({});
+  const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  React.useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+    },
+    [],
+  );
+
+  const track = (id: string) => (e: LayoutChangeEvent) => {
+    spots.current[id] = e.nativeEvent.layout.y;
+  };
+
+  const focus = (id: string) => () => {
+    const y = spots.current[id];
+    if (y == null) return;
+    // Let the keyboard finish arriving, or the scroll is measured against a
+    // layout that is about to change under it.
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => ref.current?.scrollTo({ y: Math.max(0, y - 64), animated: true }), 140);
+  };
+
+  return { ref, track, focus };
+}
+
 /**
  * Lifts its children in the first time they are drawn.
  *
@@ -247,6 +314,7 @@ export function Appear({
   from = 8,
   scaleFrom,
   style,
+  onLayout,
   children,
 }: {
   delay?: number;
@@ -255,6 +323,7 @@ export function Appear({
   from?: number;
   scaleFrom?: number;
   style?: StyleProp<ViewStyle>;
+  onLayout?: (e: LayoutChangeEvent) => void;
   children: React.ReactNode;
 }) {
   const t = useSharedValue(0);
@@ -270,7 +339,11 @@ export function Appear({
       ...(scaleFrom ? [{ scale: scaleFrom + (1 - scaleFrom) * t.value }] : []),
     ],
   }));
-  return <Animated.View style={[style, anim]}>{children}</Animated.View>;
+  return (
+    <Animated.View style={[style, anim]} onLayout={onLayout}>
+      {children}
+    </Animated.View>
+  );
 }
 
 /**
@@ -506,6 +579,13 @@ export function NameField({
   placeholder,
   compact,
   style,
+  inputRef,
+  onFocus,
+  returnKeyType = 'done',
+  onSubmit,
+  maxLength = 14,
+  keyboardType,
+  autoCapitalize,
 }: {
   label: string;
   value: string;
@@ -513,8 +593,24 @@ export function NameField({
   placeholder: string;
   compact?: boolean;
   style?: ViewStyle;
+  /** So one field can hand the keyboard to the next. */
+  inputRef?: React.RefObject<TextInput | null>;
+  onFocus?: () => void;
+  returnKeyType?: ReturnKeyTypeOptions;
+  onSubmit?: () => void;
+  /** Names are short; an address is not. */
+  maxLength?: number;
+  keyboardType?: KeyboardTypeOptions;
+  autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
 }) {
   const [focus, setFocus] = useState(false);
+  const lit = useSharedValue(0);
+  React.useEffect(() => {
+    lit.value = withTiming(focus ? 1 : 0, { duration: 180, easing: Easing.out(Easing.ease) });
+  }, [focus, lit]);
+  const border = useAnimatedStyle(() => ({
+    borderColor: interpolateColor(lit.value, [0, 1], [C.goldBorderDim, C.gold]),
+  }));
   return (
     <View style={style}>
       <Text
@@ -529,29 +625,40 @@ export function NameField({
       >
         {label}
       </Text>
-      <TextInput
-        value={value}
-        onChangeText={onChangeText}
-        maxLength={14}
-        placeholder={placeholder}
-        placeholderTextColor={C.placeholder}
-        selectionColor={C.gold}
-        autoCorrect={false}
-        returnKeyType="done"
-        onFocus={() => setFocus(true)}
-        onBlur={() => setFocus(false)}
-        style={{
-          backgroundColor: C.field,
-          borderWidth: 1,
-          borderColor: focus ? C.gold : C.goldBorderDim,
-          borderRadius: compact ? 10 : 11,
-          padding: compact ? 12 : 14,
-          color: C.cream,
-          fontFamily: F.medium,
-          fontSize: 16,
-          letterSpacing: compact ? 0 : 0.5,
-        }}
-      />
+      <Animated.View
+        style={[
+          { backgroundColor: C.field, borderWidth: 1, borderRadius: compact ? 10 : 11 },
+          border,
+        ]}
+      >
+        <TextInput
+          ref={inputRef}
+          value={value}
+          onChangeText={onChangeText}
+          maxLength={maxLength}
+          placeholder={placeholder}
+          placeholderTextColor={C.placeholder}
+          selectionColor={C.gold}
+          autoCorrect={false}
+          autoCapitalize={autoCapitalize}
+          keyboardType={keyboardType}
+          returnKeyType={returnKeyType}
+          submitBehavior={returnKeyType === 'next' ? 'submit' : 'blurAndSubmit'}
+          onSubmitEditing={onSubmit}
+          onFocus={() => {
+            setFocus(true);
+            onFocus?.();
+          }}
+          onBlur={() => setFocus(false)}
+          style={{
+            padding: compact ? 12 : 14,
+            color: C.cream,
+            fontFamily: F.medium,
+            fontSize: 16,
+            letterSpacing: compact ? 0 : 0.5,
+          }}
+        />
+      </Animated.View>
     </View>
   );
 }
@@ -1060,11 +1167,13 @@ export function CodeField({
   value,
   onChangeText,
   editable = true,
+  onFocus,
   style,
 }: {
   value: string;
   onChangeText?: (v: string) => void;
   editable?: boolean;
+  onFocus?: () => void;
   style?: ViewStyle;
 }) {
   const [focus, setFocus] = useState(false);
@@ -1081,7 +1190,10 @@ export function CodeField({
       placeholderTextColor={C.muted8}
       selectionColor={C.gold}
       returnKeyType="done"
-      onFocus={() => setFocus(true)}
+      onFocus={() => {
+        setFocus(true);
+        onFocus?.();
+      }}
       onBlur={() => setFocus(false)}
       style={[
         {
