@@ -12,7 +12,8 @@ import { attachHostConnection, type ByteSocket, type Connection } from './hostSe
 
 type RawSocket = {
   on: (event: string, cb: (arg?: unknown) => void) => void;
-  write: (data: unknown, encoding?: string) => void;
+  /** Accepts a Uint8Array directly; 'data' arrives as a Buffer, which is one too. */
+  write: (data: Uint8Array) => void;
   destroy: () => void;
 };
 
@@ -30,23 +31,19 @@ const loadTcp = () =>
     return mod?.default ?? mod;
   });
 
-export const tcpHostAvailable = () => loadTcp() !== null;
+/**
+ * The JavaScript package can load perfectly well with no native half behind it —
+ * which is exactly the situation inside Expo Go, where `NativeModules.TcpSockets`
+ * is simply absent. Asking the package whether it exists would answer yes and
+ * send the lobby into a hosting mode that cannot work, so ask the bridge instead.
+ */
+const nativeTcpPresent = () =>
+  optionalModule<object>(() => {
+    const { NativeModules } = require('react-native') as { NativeModules?: Record<string, object> };
+    return NativeModules?.TcpSockets ?? null;
+  }) !== null;
 
-const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-
-function toBase64(bytes: Uint8Array): string {
-  let out = '';
-  for (let i = 0; i < bytes.length; i += 3) {
-    const b0 = bytes[i];
-    const b1 = bytes[i + 1];
-    const b2 = bytes[i + 2];
-    out += B64[b0 >> 2];
-    out += B64[((b0 & 3) << 4) | ((b1 ?? 0) >> 4)];
-    out += i + 1 < bytes.length ? B64[((b1 & 15) << 2) | ((b2 ?? 0) >> 6)] : '=';
-    out += i + 2 < bytes.length ? B64[b2 & 63] : '=';
-  }
-  return out;
-}
+export const tcpHostAvailable = () => nativeTcpPresent() && loadTcp() !== null;
 
 /** Whatever the native bridge hands us — Buffer, typed array, or a latin-1 string. */
 function toBytes(data: unknown): Uint8Array {
@@ -111,7 +108,7 @@ function listen(
     setTaken(true);
 
     const wrapped: ByteSocket = {
-      write: (bytes) => socket.write(toBase64(bytes), 'base64'),
+      write: (bytes) => socket.write(bytes),
       destroy: () => socket.destroy(),
       onData: (cb) => socket.on('data', (d) => cb(toBytes(d))),
       onClose: (cb) => socket.on('close', () => cb()),

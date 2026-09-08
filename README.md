@@ -79,17 +79,27 @@ In any build that is not Expo Go, `react-native-tcp-socket` is live and the host
 serves the room itself — the relay is not needed at all. See **Building it as a real app**
 above. The app detects this and switches automatically; the lobby says which mode you got.
 
-### Building it as a real app
+### Building it as a real app — one phone hosts, no computer
 
-Once it is a standalone app rather than a project inside Expo Go, **the laptop goes away**:
-the app bundles `react-native-tcp-socket`, so the host phone opens the port and serves the
-table itself. Two phones on the same Wi-Fi, nothing else.
+**This is the only way to host from a phone.** Expo Go is not allowed to open a listening
+port, and no amount of app code changes that; inside it, a computer has to sit in the
+middle. A built app bundles `react-native-tcp-socket`, so the host phone opens the port and
+serves the table itself. Two phones on the same Wi-Fi, nothing else.
+
+The app works out which mode it is in by asking the native bridge, not the JavaScript
+package — the package loads fine in Expo Go with nothing behind it — so the lobby never
+offers a hosting mode that cannot work.
 
 ```bash
 npm install -g eas-cli
 eas login
+eas build:configure                              # once, if you have no eas.json
 eas build --platform android --profile preview   # an APK you can sideload
 ```
+
+`preview` builds for internal distribution, which on Android means a plain APK you can
+download onto both phones from the link EAS gives you. Add `"android": { "buildType":
+"apk" }` to that profile if you get an `.aab` instead.
 
 Install the APK on both phones. Then:
 
