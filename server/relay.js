@@ -150,6 +150,21 @@ const server = net.createServer((socket) => {
     socket.end(`HTTP/1.1 ${code} ${reason}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
   };
 
+  const health = (sock) => {
+    const body =
+      '<!doctype html><meta name=viewport content="width=device-width,initial-scale=1">' +
+      '<body style="background:#04100a;color:#efe5c8;font:16px/1.6 system-ui;text-align:center;padding:14vh 24px">' +
+      `<h1 style="color:#f2cf6f;letter-spacing:3px">E&#8209;CARD RELAY</h1><p>It is running, and this phone can reach it.</p>` +
+      `<p style="color:#8f8568;font-size:13px">Enter this whole address in the app:<br><b style="color:#e9c86e">${
+        headersHost || `this machine:${PORT}`
+      }</b></p></body>`;
+    sock.end(
+      'HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n' +
+        `Content-Length: ${Buffer.byteLength(body)}\r\nConnection: close\r\n\r\n${body}`,
+    );
+  };
+  let headersHost = '';
+
   socket.on('data', (chunk) => {
     buf = Buffer.concat([buf, chunk]);
 
@@ -170,9 +185,13 @@ const server = net.createServer((socket) => {
           return [line.slice(0, i).trim().toLowerCase(), line.slice(i + 1).trim()];
         }),
       );
+      headersHost = headers.get('host') || '';
       const key = headers.get('sec-websocket-key');
       if (!key || (headers.get('upgrade') || '').toLowerCase() !== 'websocket') {
-        return bail(400, 'Bad Request');
+        // A plain browser visit. Answer it, so opening this address on a phone is
+        // a one-tap test of "can this phone actually reach the relay?" — which
+        // separates a firewall or a wrong network from a problem in the app.
+        return health(socket);
       }
 
       const { room, role } = roomOf(m[1]);

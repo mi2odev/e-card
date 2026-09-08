@@ -98,10 +98,12 @@ function LinkBanner() {
       }}
     >
       <Text
-        numberOfLines={2}
+        numberOfLines={3}
         style={{ fontFamily: F.bold, fontSize: 10, letterSpacing: 1.8, color: C.creamOnRust, textAlign: 'center' }}
       >
-        {detail || (peerHere ? STATUS_WORD[status] : 'THE OTHER PHONE HAS LEFT THE TABLE')}
+        {/* Most specific wins: a driver's own diagnosis, then a failed dial, then
+            a peer who really was here and left. */}
+        {detail || (status === 'error' ? STATUS_WORD.error : !peerHere ? 'THE OTHER PHONE HAS LEFT THE TABLE' : STATUS_WORD[status])}
       </Text>
     </View>
   );

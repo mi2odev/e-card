@@ -533,6 +533,53 @@ async function testOnlineMatch() {
   }
 }
 
+/* ------------------------------------------- what happens when nothing is there */
+
+async function testUnreachable() {
+  console.log('\nA relay that is not there');
+  const relay = spawn('node', [resolvePath(ROOT, 'server/relay.js')], {
+    env: { ...process.env, PORT: String(PORT + 2) },
+    stdio: ['ignore', 'ignore', 'pipe'],
+  });
+  await sleep(500);
+
+  try {
+    // Opening the relay address in a browser answers, so a player can test
+    // reachability from the phone itself.
+    const res = await fetch(`http://127.0.0.1:${PORT + 2}/`);
+    const body = await res.text();
+    eq(res.status, 200, 'a plain browser visit to the relay is answered');
+    check(body.includes('RELAY'), 'and says the relay is running');
+    check(body.includes(`127.0.0.1:${PORT + 2}`), 'echoing the address that worked', body.slice(0, 120));
+  } finally {
+    relay.kill();
+  }
+
+  // Now dial a port with nothing on it at all.
+  const E = {
+    session: await import('../src/net/session.ts?device=e'),
+    net: await import('../src/store/useNet.ts?device=e'),
+  };
+  await E.session.startSession({
+    kind: 'wifi',
+    role: 'guest',
+    code: ROOM,
+    address: '127.0.0.1',
+    port: PORT + 3,
+    name: 'Nobody',
+  });
+  await until(() => E.net.useNet.getState().status === 'error', 'a dial that lands nowhere reports an error');
+  const detail = E.net.useNet.getState().detail;
+  check(detail.includes(`127.0.0.1:${PORT + 3}`), 'naming the address it could not reach', detail);
+  check(detail.includes('npm run relay'), 'and what to do about it', detail);
+  check(
+    !detail.includes('LEFT THE TABLE'),
+    'never blaming a phone that was never connected',
+    detail,
+  );
+  E.session.stopSession();
+}
+
 /* -------------------------------------------------------------------- run */
 
 console.log('E-CARD self-test');
@@ -545,6 +592,7 @@ await testWire();
 await testDirectHost();
 await testRedaction();
 await testOnlineMatch();
+await testUnreachable();
 
 console.log(`\n${checks - failures}/${checks} checks passed\n`);
 process.exit(failures ? 1 : 0);

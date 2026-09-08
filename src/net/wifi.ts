@@ -20,9 +20,18 @@ const url = (address: string, port: number, code: string, role: 'host' | 'guest'
   `ws://${address}:${port}/?room=${encodeURIComponent(code)}&role=${role}`;
 
 /** A WebSocket client link — used by the guest always, and by the host in relay mode. */
-function clientLink(target: string, ev: LinkEvents, info: Link['info'], onOpen?: (send: (m: NetMessage) => void) => void): Link {
+function clientLink(
+  target: string,
+  ev: LinkEvents,
+  info: Link['info'],
+  unreachable: string,
+  onOpen?: (send: (m: NetMessage) => void) => void,
+): Link {
   let socket: WebSocket | null = null;
   let closedByUs = false;
+  // A socket that never opened was never a table. Saying "the other phone left"
+  // in that case sends people hunting for the wrong problem entirely.
+  let everOpen = false;
 
   try {
     socket = new WebSocket(target);
@@ -35,16 +44,27 @@ function clientLink(target: string, ev: LinkEvents, info: Link['info'], onOpen?:
     if (socket && socket.readyState === 1) socket.send(encode(msg));
   };
 
-  socket.onopen = () => onOpen?.(send);
+  const failed = () => {
+    if (!closedByUs) ev.onStatus('error', unreachable);
+  };
+
+  socket.onopen = () => {
+    everOpen = true;
+    onOpen?.(send);
+  };
   socket.onmessage = (e: { data: unknown }) => {
     const msg = decode(String(e.data));
     if (msg) ev.onMessage(msg);
   };
+  // A failed dial fires onerror and then onclose. Both report the same thing, so
+  // the second one cannot wipe the diagnosis the first one gave.
   socket.onerror = () => {
-    if (!closedByUs) ev.onStatus('error', 'could not reach the table');
+    if (!everOpen) failed();
   };
   socket.onclose = () => {
-    if (!closedByUs) ev.onStatus('closed');
+    if (closedByUs) return;
+    if (everOpen) ev.onStatus('closed');
+    else failed();
   };
 
   return {
@@ -105,11 +125,18 @@ async function host(opts: HostOptions, ev: LinkEvents): Promise<Link> {
 
   // 2. Otherwise both phones meet at the relay.
   ev.onStatus('connecting');
-  return clientLink(url(opts.address, opts.port, opts.code, 'host'), ev, {
-    mode: 'relay',
-    hint: `${opts.address}:${opts.port}`,
-  }, () => ev.onStatus('waiting'));
+  return clientLink(
+    url(opts.address, opts.port, opts.code, 'host'),
+    ev,
+    { mode: 'relay', hint: `${opts.address}:${opts.port}` },
+    noRelay(opts.address, opts.port),
+    () => ev.onStatus('waiting'),
+  );
 }
+
+/** Said out loud on both phones when the dial never lands. */
+const noRelay = (address: string, port: number) =>
+  `NO RELAY AT ${address}:${port} — RUN "npm run relay" ON THAT COMPUTER AND CHECK BOTH PHONES ARE ON ITS WI-FI`;
 
 async function join(opts: JoinOptions, ev: LinkEvents): Promise<Link> {
   ev.onStatus('connecting');
@@ -117,6 +144,7 @@ async function join(opts: JoinOptions, ev: LinkEvents): Promise<Link> {
     url(opts.address, opts.port, opts.code, 'guest'),
     ev,
     { mode: 'relay', hint: `${opts.address}:${opts.port}` },
+    noRelay(opts.address, opts.port),
     () => ev.onStatus('connected'),
   );
 }
