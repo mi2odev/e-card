@@ -302,3 +302,16 @@ Portrait-locked, dark, 44 px minimum touch targets.
 
 See `DESIGN-PARITY.md` for the handful of CSS effects that have no literal React Native
 equivalent and what each one became.
+
+## Made by
+
+Designed and coded by **Mohamed Mehdi Zitouni**. The same links are in the app, under
+**CREDITS** on the title screen.
+
+- Portfolio — https://mohamedmehdi-zitouni.netlify.app/
+- GitHub — https://github.com/mi2odev/
+- Instagram — https://www.instagram.com/_.mi2o/
+- LinkedIn — https://www.linkedin.com/in/mohamed-mehdi-zitouni-a84423418/
+
+E-Card is the game from *Kaiji*, by Nobuyuki Fukumoto. This app is a fan-made adaptation of
+it and is not affiliated with the rights holders.
