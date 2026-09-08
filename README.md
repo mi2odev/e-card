@@ -58,6 +58,18 @@ relay you run on any computer on the same Wi-Fi:
 npm run relay        # prints the address to type into both phones
 ```
 
+**If a phone says it cannot reach the relay,** open that same address in the phone's
+browser (`http://192.168.1.20:8787`). The relay answers plain browser visits with a page
+saying it is running, so:
+
+- **page loads** → the network is fine; check the code matches on both phones
+- **page does not load** → the phone cannot see that machine at all. Usual causes, in
+  order: the relay is not running; the computer's firewall is blocking Node on port 8787
+  (on Windows, allow it on *private* networks); the phones are on a guest network or one
+  with client isolation; or the printed address belongs to a virtual adapter (VirtualBox,
+  WSL, a VPN) rather than the real Wi-Fi one — the relay lists every address it found, so
+  try another.
+
 It has zero dependencies, keeps nothing after a room empties, and is about 250 lines
 (`server/relay.js`). The address field in the app is pre-filled with your Metro host,
 which is usually the same machine — so most of the time neither player types anything
