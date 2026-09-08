@@ -524,7 +524,7 @@ export function HistoryStrip({
     <View style={[{ flexDirection: 'row', gap: 5, justifyContent: 'center' }, style]}>
       {Array.from({ length: 12 }, (_, i) => i + 1).map((g) => {
         const h = byGame.get(g);
-        // A round that ran its three plays without a decision: played, won by nobody.
+        // A round that ran out of cards without a decision: played, won by nobody.
         if (h && h.winner === null) {
           return (
             <View
@@ -699,7 +699,8 @@ const RULES = [
   'The Emperor side holds 1 Emperor + 4 Citizens. The Slave side holds 1 Slave + 4 Citizens. Fresh hands every round.',
   'One side lays its card face down first and the other answers, then both are flipped. The Emperor side opens round 1; who goes first alternates on every play and again at each new round.',
   'Citizen vs Citizen is a draw — both cards are discarded and the round continues.',
-  'A round is three plays at most. It ends the instant a special card wins or loses; if all three plays are drawn, the round is spent and neither side takes it.',
+  'A round runs until a card decides it — up to five plays, which is every card in hand.',
+  'Sit on Citizens and the last two cards are the Emperor and the Slave, which the Slave takes at 5×. The Emperor side has to strike before the cards run out; the Slave side has to guess when.',
   'A match is 12 rounds in 4 sets of 3. Sides swap between sets, so each player holds each side for 6 rounds.',
   'Stakes: an Emperor-side win collects 1× the wager — a Slave-side win collects 5×. The loser pays, down to their last point.',
 ];

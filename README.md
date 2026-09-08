@@ -271,17 +271,20 @@ E-Card as played in *Kaiji*.
 **The matchups.** Emperor › Citizen › Slave › Emperor. Citizen vs Citizen is a draw —
 both cards are discarded and the round continues.
 
-**A round is three plays at most.** It ends the instant a special card wins or loses. If
-all three plays are drawn, the round is *spent*: neither side takes it and no money moves.
-Two of the five cards are never revealed, which is the whole point — with 4 Citizens
-against 3 plays, either side can sit on Citizens and give nothing away. (Were a round
-played to exhaustion instead, its fifth play would always be Emperor against Slave, and
-the Slave side could force its 5× win every round just by stalling.)
+**A round runs until a card decides it** — five plays at the outside, which is every card
+in hand. It ends the instant a special card wins or loses; drawn Citizens are discarded and
+the round carries on.
+
+Play all the way down and the last two cards are the Emperor and the Slave, which the Slave
+takes at 5×. That is the whole game: the Emperor side cannot sit on Citizens and wait, it
+has to put the Emperor down on a play where the Slave side has not — and the Slave side
+spends the round guessing when that will be. A round with no winner is therefore not
+reachable from a dealt hand; the rules still say what one would be, so a round always ends.
 
 **The sides do not place together.** One lays its card face down first and the other
 answers, then both are flipped. Round 1 opens with the Emperor side; the opener alternates
 on every play within a round, and again at the top of each round — so round 1 goes
-E, S, E and round 2 goes S, E, S.
+E, S, E, S, E and round 2 goes S, E, S, E, S.
 
 **The match.** 12 rounds in 4 sets of 3. The sides swap between sets, so each player holds
 each side for 6 rounds.

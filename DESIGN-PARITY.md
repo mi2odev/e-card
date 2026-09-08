@@ -94,17 +94,18 @@ Online play changes two things about the flow itself:
 
 ## Rule corrections against the anime
 
-The first cut of the rules engine played each round until a card decided it, with the
-Emperor side always placing first. Neither matches E-Card as played in *Kaiji*. Both are
-fixed, and `npm run selftest` covers them:
+The first cut of the rules engine had the Emperor side always placing first, which is not
+E-Card as played in *Kaiji*. A later cut also capped a round at three plays; that has been
+taken back out, because playing every card is the point (see **Rules encoded** in the
+README). `npm run selftest` covers all of it:
 
 | Rule | Was | Now |
 |---|---|---|
-| Round length | Played until decisive — up to 5 plays | **Three plays at most** (`PLAYS_PER_GAME`) |
-| Three drawn plays | Impossible; a 5th play was always Emperor vs Slave, so the Slave side could force its 5× win every round by stalling | The round is **spent** — no winner, no payout, and a neutral pip on the history strip |
+| Round length | Capped at three plays, a round that drew three times going to nobody | **Until a card decides it — five plays, every card in hand** (`PLAYS_PER_GAME`) |
+| Stalling | Sitting on Citizens was safe for either side once the cap ran out | The fifth play is always Emperor against Slave, so the Slave side takes a stalled round at 5× — the Emperor side has to strike first |
 | Placing order | Emperor side placed first on every play | `firstPlacer(round, play)` — the Emperor side opens round 1, and the opener alternates on every play and again at each new round |
 | Order enforcement | None — online, both phones played at once | `picker` is authoritative in both modes; a card from the other side is refused, and the far phone shows *"…side places first"* until its turn |
-| Vocabulary | "game", "turn" | "round", "play n of 3", matching the source |
+| Vocabulary | "game", "turn" | "round", "play n of 5", matching the source |
 
 Unchanged, because they were already right: the hands (1 special + 4 Citizens, redealt
 each round), the matchups and the Citizen-vs-Citizen discard, 12 rounds in 4 sets of 3

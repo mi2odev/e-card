@@ -3,12 +3,14 @@
 // A match is 12 rounds in 4 groups of 3; the Emperor and Slave sides swap
 // between groups, so each player holds each side for 6 rounds.
 //
-// A round is at most THREE plays. Each side holds 1 special card + 4 Citizens,
-// so either side can sit on Citizens for all three plays — a round that never
-// turns up an Emperor or a Slave simply ends with nobody winning and no money
-// moving. That cap is the whole game: without it the fifth play of a round
-// would always be Emperor against Slave, and the Slave side could force its 5x
-// win every round just by stalling.
+// A round runs until a card decides it, and every card gets played if neither
+// side commits: five plays, since each side holds 1 special card + 4 Citizens.
+//
+// That last play is the whole tension of E-Card. Sit on Citizens all the way and
+// the two cards left are the Emperor and the Slave — which the Slave takes, at
+// 5x. So the Emperor side cannot simply wait: it has to put the Emperor down on
+// a play where the Slave side has not, and the Slave side spends the round
+// guessing when that will be.
 //
 // The two sides do not place at the same time. One places face down first and
 // the other answers. Round 1 opens with the Emperor side placing first, the
@@ -27,8 +29,8 @@ export const SIDE_WORD: Record<Side, string> = { emp: 'EMPEROR', slv: 'SLAVE' };
 
 export const TOTAL_GAMES = 12;
 export const SWAP_EVERY = 3;
-/** A round is decided within three plays, or it is decided by nobody. */
-export const PLAYS_PER_GAME = 3;
+/** Five cards a side, so five plays at the outside — and the fifth decides it. */
+export const PLAYS_PER_GAME = 5;
 export const EMPEROR_MULT = 1;
 export const SLAVE_MULT = 5;
 
@@ -68,7 +70,7 @@ export function firstPlacer(game: number, turn: number): Side {
   return (game - 1 + (turn - 1)) % 2 === 0 ? 'emp' : 'slv';
 }
 
-/** The last play of a round — after this one the round is over, drawn or not. */
+/** The last play of a round — after this one the round is over, however it went. */
 export const isFinalPlay = (turn: number) => turn >= PLAYS_PER_GAME;
 
 let seq = 0;
@@ -92,9 +94,12 @@ export function freshHands(): Hands {
 }
 
 /**
- * Citizen against Citizen. `final` marks the third play, where the round is
- * spent and nobody collects — as opposed to the earlier plays, where both cards
- * are discarded and the round carries on.
+ * Citizen against Citizen: both cards are discarded and the round carries on.
+ *
+ * `final` marks a draw on the last play, which would end the round with nobody
+ * collecting. Dealt hands cannot reach it — four Citizens each means the fifth
+ * play is always Emperor against Slave — but the rules still say what happens,
+ * so a round always ends.
  */
 export type DrawOutcome = { draw: true; final: boolean; line: string };
 export type DecisiveOutcome = {
@@ -112,7 +117,7 @@ export type Outcome = DrawOutcome | DecisiveOutcome;
 /**
  * Emperor beats Citizen · Citizen beats Slave · Slave beats Emperor.
  * Citizen vs Citizen is a draw: both cards are discarded and the round goes on,
- * unless this was the third play, in which case the round ends with no winner.
+ * unless there are no plays left, in which case it ends with no winner.
  * Emperor-side win pays 1x, Slave-side win pays 5x, capped at the loser's bankroll.
  */
 export function resolveTurn(input: {

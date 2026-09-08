@@ -94,8 +94,8 @@ export default function RevealScreen() {
     ? ''
     : spent
       ? stakesOn
-        ? 'THREE PLAYS SPENT · THE WAGER GOES BACK'
-        : 'THREE PLAYS SPENT · THE ROUND GOES TO NEITHER'
+        ? 'EVERY CARD SPENT · THE WAGER GOES BACK'
+        : 'EVERY CARD SPENT · THE ROUND GOES TO NEITHER'
       : result.draw
         ? stakesOn
           ? 'BOTH CITIZENS DISCARDED · THE STAKE RIDES ON'
