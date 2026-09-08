@@ -2,6 +2,16 @@ import { create } from 'zustand';
 import type { LinkInfo, TransportKind } from '../net/link';
 import type { LinkStatus } from '../net/protocol';
 
+/** Enough about the table this phone left to offer the seat back. */
+export type ResumeInfo = {
+  code: string;
+  kind: TransportKind;
+  role: 'host' | 'guest';
+  /** Which of the twelve games was on the table when the phone left. */
+  game: number;
+  inMatch: boolean;
+};
+
 export type NetUiState = {
   active: boolean;
   role: 'host' | 'guest';
@@ -17,6 +27,12 @@ export type NetUiState = {
   myName: string;
   peerName: string;
   peerHere: boolean;
+  /** Dialling a link that had been working and dropped. The match is still here. */
+  retrying: boolean;
+  /** Which attempt at getting back is in flight, counting from 1. */
+  attempt: number;
+  /** The table this phone walked away from, offered back on the two-phones screen. */
+  resume: ResumeInfo | null;
 };
 
 type NetActions = {
@@ -37,6 +53,9 @@ const initial: NetUiState = {
   myName: '',
   peerName: '',
   peerHere: false,
+  retrying: false,
+  attempt: 0,
+  resume: null,
 };
 
 export const useNet = create<NetUiState & NetActions>((set) => ({

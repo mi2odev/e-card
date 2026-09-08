@@ -6,7 +6,8 @@ import { C, F } from '../src/theme';
 import { BigButton, CodeField, HelpButton, NameField, Segmented, StatusLine, shadow } from '../src/ui/kit';
 import { TableBackground } from '../src/ui/Radial';
 import { useGame } from '../src/store/useGame';
-import { DRIVERS, startSession } from '../src/net/session';
+import { useNet } from '../src/store/useNet';
+import { DRIVERS, forgetParkedTable, resumeSession, startSession } from '../src/net/session';
 import { wifiHostsItself } from '../src/net/wifi';
 import { defaultRelayAddress, localIpAddress } from '../src/net/discover';
 import { DEFAULT_PORT, isCompleteRoomCode, makeRoomCode, normalizeRoomCode } from '../src/net/protocol';
@@ -20,6 +21,9 @@ export default function OnlineScreen() {
   const insets = useSafeAreaInsets();
   const p1 = useGame((s) => s.p1);
   const setP1 = useGame((s) => s.setP1);
+  // A table this phone walked away from — by accident or otherwise. The seat is
+  // still there as long as the other phone is holding it.
+  const resume = useNet((s) => s.resume);
 
   const [role, setRole] = useState<Role>('host');
   const [kind, setKind] = useState<TransportKind>('wifi');
@@ -60,6 +64,21 @@ export default function OnlineScreen() {
     () => isCompleteRoomCode(code) && (!needsAddress || address.trim().length > 0) && !busy,
     [code, needsAddress, address, busy],
   );
+
+  /** Take the seat that was left, on the same table, with the match as it stood. */
+  const back = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      await resumeSession();
+      router.replace('/lobby');
+    } catch (e) {
+      setError(String((e as { message?: string })?.message ?? e).toUpperCase());
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const go = async () => {
     if (!ready) return;
@@ -135,6 +154,54 @@ export default function OnlineScreen() {
           <Text style={{ fontFamily: F.body, fontSize: 10, letterSpacing: 2.5, color: C.muted3, marginTop: 2 }}>
             EACH PLAYER KEEPS THEIR OWN HAND
           </Text>
+
+          {resume ? (
+            <View
+              style={{
+                marginTop: 18,
+                borderRadius: 14,
+                borderWidth: 1,
+                borderColor: C.goldBorder,
+                backgroundColor: 'rgba(0,0,0,0.34)',
+                overflow: 'hidden',
+              }}
+            >
+              <View style={{ paddingHorizontal: 16, paddingTop: 14, paddingBottom: 12, gap: 4 }}>
+                <Text style={{ fontFamily: F.semi, fontSize: 10, letterSpacing: 2, color: C.muted2 }}>
+                  YOU LEFT A TABLE
+                </Text>
+                <Text style={{ fontFamily: F.display, fontSize: 30, lineHeight: 32, letterSpacing: 6, color: C.goldBright }}>
+                  {resume.code}
+                </Text>
+                <Text style={{ fontFamily: F.body, fontSize: 9, letterSpacing: 1.4, color: C.muted7, lineHeight: 13 }}>
+                  {resume.inMatch
+                    ? `ROUND ${resume.game} OF 12 WAS STILL ON IT. IF THE OTHER PHONE IS STILL THERE, THE MATCH PICKS UP EXACTLY WHERE IT STOPPED.`
+                    : 'THE SEAT IS STILL YOURS IF THE OTHER PHONE HAS NOT CLOSED THE TABLE.'}
+                </Text>
+              </View>
+              <BigButton
+                label={busy ? 'ONE MOMENT…' : 'TAKE YOUR SEAT AGAIN'}
+                fontSize={19}
+                onPress={() => void back()}
+                style={{ marginHorizontal: 12 }}
+              />
+              <Pressable
+                onPress={() => {
+                  tapLight();
+                  forgetParkedTable();
+                }}
+                style={({ pressed }) => ({
+                  paddingVertical: 12,
+                  alignItems: 'center',
+                  opacity: pressed ? 0.6 : 1,
+                })}
+              >
+                <Text style={{ fontFamily: F.body, fontSize: 9, letterSpacing: 2, color: C.muted7 }}>
+                  NO — THAT TABLE IS DONE
+                </Text>
+              </Pressable>
+            </View>
+          ) : null}
 
           <Segmented
             style={{ marginTop: 20 }}

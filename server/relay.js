@@ -27,6 +27,14 @@ const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 const MAX_FRAME_BYTES = 1 << 20;
 const IDLE_ROOM_MS = 10 * 60 * 1000;
 
+/**
+ * A phone that loses Wi-Fi leaves a socket that is dead without being closed —
+ * and while it lingers it holds a seat the same phone needs to get back into.
+ * So every client is pinged, and one that has said nothing for a while is cut.
+ */
+const PING_EVERY_MS = 20 * 1000;
+const SILENT_CLIENT_MS = 60 * 1000;
+
 /** roomCode -> { host: Client|null, guest: Client|null, touched: number } */
 const rooms = new Map();
 
@@ -110,8 +118,14 @@ function makeClient(socket) {
     socket,
     room: '',
     role: '',
+    heard: Date.now(),
+    /** Its seat has been taken by a newer socket, so its exit says nothing about the room. */
+    evicted: false,
     send(text) {
       if (!socket.destroyed) socket.write(encodeFrame(Buffer.from(text, 'utf8')));
+    },
+    ping() {
+      if (!socket.destroyed) socket.write(encodeFrame(Buffer.alloc(0), 0x9));
     },
     close() {
       try {
@@ -129,6 +143,9 @@ function peerOf(client) {
 }
 
 function leave(client) {
+  // Its seat already belongs to a newer socket — see the reclaim below. Saying
+  // it left would tell the other phone a lie about someone who is still there.
+  if (client.evicted) return;
   const room = rooms.get(client.room);
   if (!room) return;
   if (room[client.role] === client) room[client.role] = null;
@@ -142,6 +159,7 @@ function leave(client) {
 
 const server = net.createServer((socket) => {
   socket.setNoDelay(true);
+  socket.setKeepAlive(true, 30_000);
   const client = makeClient(socket);
   let upgraded = false;
   let buf = Buffer.alloc(0);
@@ -166,6 +184,7 @@ const server = net.createServer((socket) => {
   let headersHost = '';
 
   socket.on('data', (chunk) => {
+    client.heard = Date.now();
     buf = Buffer.concat([buf, chunk]);
 
     if (!upgraded) {
@@ -199,8 +218,14 @@ const server = net.createServer((socket) => {
 
       const slot = rooms.get(room) || { host: null, guest: null, touched: Date.now() };
       if (slot[role]) {
-        log(`room ${room}: ${role} seat already taken`);
-        return bail(409, 'Seat Taken');
+        // Almost always the same phone coming back on a new socket, with the old
+        // one dead but not yet closed. The room code is the only credential a
+        // table has, so the newcomer takes the seat and the stale one is dropped.
+        log(`room ${room}: ${role} seat reclaimed`);
+        const stale = slot[role];
+        stale.evicted = true;
+        slot[role] = null;
+        stale.close();
       }
 
       const accept = crypto.createHash('sha1').update(key + GUID).digest('base64');
@@ -261,6 +286,23 @@ setInterval(() => {
     if (now - room.touched > IDLE_ROOM_MS && !room.host && !room.guest) rooms.delete(code);
   }
 }, 60_000).unref();
+
+// Keep the seats honest: a client that has gone silent is holding a seat its own
+// phone will want back the moment it is on the network again.
+setInterval(() => {
+  const now = Date.now();
+  for (const room of rooms.values()) {
+    for (const client of [room.host, room.guest]) {
+      if (!client) continue;
+      if (now - client.heard > SILENT_CLIENT_MS) {
+        log(`room ${client.room}: ${client.role} has gone quiet — dropping it`);
+        client.close();
+        continue;
+      }
+      client.ping();
+    }
+  }
+}, PING_EVERY_MS).unref();
 
 server.on('error', (e) => {
   console.error(`\nCould not listen on port ${PORT}: ${e.message}`);

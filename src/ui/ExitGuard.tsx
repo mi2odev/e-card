@@ -52,7 +52,7 @@ export function ExitGuard() {
 
   const leave = useCallback(() => {
     hide();
-    if (useGame.getState().netRole !== 'off') stopSession('left the table');
+    if (useGame.getState().netRole !== 'off') stopSession('THE OTHER PLAYER LEFT THE TABLE');
     useGame.getState().endMatch();
     router.replace('/');
   }, [hide, router]);
@@ -85,13 +85,18 @@ export function ExitGuard() {
   const opponent = nameOf(state, state.seat === 'p1' ? 'p2' : 'p1');
   const title = inLobby ? 'LEAVE THE TABLE?' : 'ABANDON THE MATCH?';
 
+  // Online, walking away is not the end of it: the table is kept, and TWO PHONES
+  // offers the seat back for as long as the other phone is still holding it.
   let body: string;
   if (inLobby) {
-    body = net.peerHere
-      ? `${opponent} is already seated. Leaving closes the table and sends them back to the title.`
-      : 'The table closes and the code stops working. You can open a new one at any time.';
+    body =
+      net.role === 'guest'
+        ? 'Whoever opened the table keeps it open. You can take this seat again from TWO PHONES.'
+        : net.peerHere
+          ? `${opponent} is already seated. Leaving closes the table and sends them back to the title — reopening it on the same code lets them back in.`
+          : 'The table closes and the code stops working. You can open a new one at any time.';
   } else if (online) {
-    body = `Round ${state.game} of 12 is still on the table, and ${opponent} will be left sitting at it. Nothing is saved.`;
+    body = `Round ${state.game} of 12 is still on the table, and ${opponent} will be left sitting at it. You can take the seat again from TWO PHONES while they hold it.`;
   } else {
     body = `Round ${state.game} of 12 is still on the table. Every point either of you has won is lost — nothing is saved.`;
   }
