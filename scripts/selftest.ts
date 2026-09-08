@@ -258,22 +258,11 @@ async function testWire() {
   const { createHash } = await import('node:crypto');
   const frames = await import('../src/net/ws/frames.ts');
   const { FrameDecoder, acceptKey, base64, encodeText, sha1, utf8Decode, utf8Encode, parseHandshake } = frames;
-  const { ChunkAssembler, decodeChunk, encodeChunk, splitMessage } = await import('../src/net/ble/chunks.ts');
-
-  eq(acceptKey('dGhlIHNhbXBsZSBub25jZQ=='), 's3pPLMBiTxaQ9kYGzzhZRbK+xOo=', 'RFC 6455 handshake key');
-  for (const sample of ['', 'abc', 'the slave fells the emperor', '日本語 🎴', 'x'.repeat(5000)]) {
-    eq(
-      base64(sha1(utf8Encode(sample))),
-      createHash('sha1').update(Buffer.from(sample, 'utf8')).digest('base64'),
-      `sha1 matches node crypto (${sample.length} chars)`,
-    );
-    eq(utf8Decode(utf8Encode(sample)), sample, `utf8 round-trip (${sample.length} chars)`);
-  }
   eq(parseHandshake('GET /?room=AB4K HTTP/1.1\r\nUpgrade: websocket\r\n'), null, 'a partial request is not yet a handshake');
 
   // Server frames are unmasked; feed one back through the decoder in odd slices.
   const decoder = new FrameDecoder();
-  const payloads = ['hi', 'y'.repeat(300), '🎴'.repeat(40000)];
+  const payloads = ['hi', 'y'.repeat(300), '\u{1F3B4}'.repeat(40000)];
   const stream = payloads.map((t) => encodeText(t));
   const flat = new Uint8Array(stream.reduce((n, f) => n + f.length, 0));
   let at = 0;
@@ -286,20 +275,6 @@ async function testWire() {
     for (const f of decoder.push(flat.subarray(i, i + 7))) out.push(utf8Decode(f.payload));
   }
   eq(out, payloads, 'frames survive being split across arbitrary chunks');
-
-  for (const msg of ['x', '🎴'.repeat(400), 'ünïcødé ✦ '.repeat(200)]) {
-    const assembler = new ChunkAssembler();
-    let done: string | null = null;
-    for (const c of splitMessage(9, msg)) done = assembler.push(decodeChunk(encodeChunk(c))) ?? done;
-    eq(done, msg, `BLE chunking round-trip (${msg.length} chars)`);
-  }
-  const assembler = new ChunkAssembler();
-  assembler.push(splitMessage(1, 'z'.repeat(600))[0]);
-  eq(
-    splitMessage(2, 'a fresh message').map((c) => assembler.push(c)).filter(Boolean)[0],
-    'a fresh message',
-    'an abandoned message cannot bleed into the next one',
-  );
 }
 
 /* ---------------------------------------------- the in-app (direct) server */

@@ -48,6 +48,14 @@
             "usesCleartextTraffic": true
           }
         }
+      ],
+      [
+        "expo-nearby-connections",
+        {
+          "bonjourServicesName": "ecard",
+          "localNetworkUsagePermissionText": "E-Card finds the other player's phone on your local network to deal the cards.",
+          "bluetoothUsagePermissionText": "E-Card uses Bluetooth to find the other player's phone when there is no Wi-Fi to share."
+        }
       ]
     ],
     "experiments": {
