@@ -304,13 +304,17 @@ async function host(opts: HostOptions, ev: LinkEvents): Promise<Link> {
   // On a hotspot there is no third machine to fall back to — the network only
   // exists because this phone is making it, and a relay would have to live on it.
   if (opts.hotspot) {
-    ev.onStatus('error', direct ? cannotListen(direct.failure, opts.port) : CANNOT_SHARE);
+    ev.onStatus('error', direct ? cannotListen(direct.failure, opts.port) : CANNOT_SHARE, true);
     return deadLink;
   }
 
   // 2. Otherwise both phones meet at the relay.
   if (!opts.address) {
-    ev.onStatus('error', 'THIS BUILD CANNOT HOST BY ITSELF — ENTER THE ADDRESS OF A COMPUTER RUNNING "npm run relay"');
+    ev.onStatus(
+      'error',
+      'THIS COPY CANNOT HOST BY ITSELF — ENTER THE ADDRESS OF A COMPUTER RUNNING THE RELAY',
+      true,
+    );
     return deadLink;
   }
   ev.onStatus('connecting');
@@ -334,8 +338,16 @@ const noRelay = (address: string, port: number) =>
 const noAnswer = (address: string, port: number) =>
   `NOTHING ANSWERED AT ${address}:${port} — CHECK THE ADDRESS, AND THAT BOTH PHONES ARE ON THE SAME WI-FI. OPENING http://${address}:${port} IN THIS PHONE'S BROWSER SAYS WHETHER IT CAN BE REACHED AT ALL.`;
 
+/**
+ * Said when there is no in-app server in this copy at all.
+ *
+ * Expo Go is the usual reason and used to be the only one named — which reads
+ * as nonsense on a phone that downloaded the app, and sends the player off to
+ * build something they are already running. So it says what is true either way
+ * first, and what to do about it second.
+ */
 const CANNOT_SHARE =
-  'THIS COPY CANNOT SERVE A TABLE — EXPO GO IS NOT ALLOWED TO OPEN A PORT. THE PHONE SHARING THE HOTSPOT NEEDS THE BUILT APP; THE OTHER ONE DOES NOT.';
+  'THIS COPY CANNOT SERVE A TABLE — IT HAS NO WAY TO OPEN A PORT. THAT IS NORMAL IN EXPO GO, WHICH IS NOT ALLOWED ONE; IN A DOWNLOADED APP IT MEANS THE BUILD WENT OUT WITHOUT THE PART THAT DOES IT. THE PHONE SHARING THE HOTSPOT NEEDS A BUILD THAT HAS IT; THE OTHER ONE DOES NOT.';
 
 /**
  * This build *can* serve a table and this time it could not. Almost always the

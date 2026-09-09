@@ -38,12 +38,26 @@ const RETRY_DELAYS_MS = [600, 1200, 2500, 4000, 6000, 9000, 12000, 15000];
 /** About two minutes of trying before the player is asked whether to keep going. */
 const MAX_RETRIES = 14;
 
+/**
+ * How many goes a dial that has *never* landed gets — fewer than one that
+ * worked and dropped, but more than the none it used to get.
+ *
+ * The old rule was that a dial which never landed is a wrong address and not
+ * worth repeating. That is true of a typo and false of the thing that actually
+ * happens: the two players press their buttons seconds apart, so the one who is
+ * not setting anything up dials a table that is not open yet and is told, with
+ * some finality, that nothing answered. The address is still named while this
+ * goes on, so a real typo is no harder to spot.
+ */
+const MAX_FIRST_TRIES = 6;
+
 /** Heartbeat interval, and the silence after which the far phone counts as gone. */
 const HEARTBEAT_MS = 4000;
 const SILENT_MS = 12_000;
 
 const SAY = {
   dropped: 'THE LINK DROPPED — TAKING THE SEAT AGAIN',
+  notYet: 'NOTHING ANSWERED YET',
   quiet: 'THE OTHER PHONE HAS GONE QUIET',
   gaveUp: 'COULD NOT GET BACK TO THE TABLE — TRY AGAIN?',
   guestLeft: 'THE CHALLENGER LEFT THE TABLE — THE SEAT IS OPEN AGAIN',
@@ -61,7 +75,7 @@ let retries = 0;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
 let heartbeat: ReturnType<typeof setInterval> | null = null;
 let lastHeard = 0;
-/** A dial that never landed is a wrong address, not a drop — only redial a link that worked. */
+/** Whether this link has ever been up, which decides how long it is worth dialling. */
 let everWorked = false;
 /** Whether the two phones have ever been paired on this table, which changes what an empty room means. */
 let everPaired = false;
@@ -248,7 +262,7 @@ function onMessage(role: 'host' | 'guest', msg: NetMessage): void {
   }
 }
 
-function onStatus(role: 'host' | 'guest', status: LinkStatus, detail?: string): void {
+function onStatus(role: 'host' | 'guest', status: LinkStatus, detail?: string, fatal?: boolean): void {
   if (leaving) return;
 
   // A redial reports its own progress — 'starting', then 'connecting' — and none
@@ -268,8 +282,16 @@ function onStatus(role: 'host' | 'guest', status: LinkStatus, detail?: string): 
     return;
   }
 
-  if ((status === 'closed' || status === 'error') && canRedial()) {
+  if ((status === 'closed' || status === 'error') && !fatal && canRedial()) {
     linkLost(detail);
+    return;
+  }
+
+  // The link is finished — out of tries, or never worth a second one. Whatever
+  // was being done about it is not being done any more, and the banner must not
+  // go on saying otherwise.
+  if (status === 'closed' || status === 'error') {
+    useNet.getState().patch({ status, detail: detail ?? '', retrying: false, attempt: 0 });
     return;
   }
 
@@ -285,7 +307,9 @@ function sayHello(): void {
 
 /* ------------------------------------------------------------- reconnecting */
 
-const canRedial = () => !!table && !leaving && everWorked && !peerLeftForGood && retries < MAX_RETRIES;
+const triesAllowed = () => (everWorked ? MAX_RETRIES : MAX_FIRST_TRIES);
+
+const canRedial = () => !!table && !leaving && !peerLeftForGood && retries < triesAllowed();
 
 /**
  * The link is gone. Drop it, keep the match, and start dialling — or, if there
@@ -305,12 +329,14 @@ function linkLost(detail?: string): void {
       useNet.getState().patch({ status: 'closed', retrying: false });
       return;
     }
-    // Running out of tries is the one case worth overriding a driver's own words
-    // with: nothing new went wrong, we simply stopped, and the player decides.
-    const spent = everWorked && retries >= MAX_RETRIES;
+    // Running out of tries on a link that worked is the one case worth
+    // overriding a driver's own words with: nothing new went wrong, we simply
+    // stopped, and the player decides. On a link that never worked the driver's
+    // diagnosis is the whole of what is useful, so it is what stands.
+    const spent = retries >= triesAllowed();
     useNet.getState().patch({
       status: everWorked ? 'closed' : 'error',
-      detail: spent ? SAY.gaveUp : detail || (everWorked ? SAY.gaveUp : ''),
+      detail: everWorked ? (spent ? SAY.gaveUp : detail || SAY.gaveUp) : detail || SAY.notYet,
       retrying: false,
     });
     return;
@@ -320,7 +346,13 @@ function linkLost(detail?: string): void {
   retries += 1;
   useNet.getState().patch({
     status: 'connecting',
-    detail: `${SAY.dropped} (${retries})`,
+    // A link that dropped is being picked back up, and saying so is the point.
+    // One that never landed has a diagnosis worth keeping in front of the
+    // player — the address it could not reach — so that is kept, and only the
+    // count is added to it.
+    detail: everWorked
+      ? `${SAY.dropped} (${retries})`
+      : `${detail || SAY.notYet} — TRYING AGAIN (${retries})`,
     retrying: true,
     attempt: retries,
   });
@@ -390,7 +422,7 @@ async function openLink(opts: StartOptions): Promise<void> {
     hotspot: opts.hotspot === true,
   };
   const events = {
-    onStatus: (status: LinkStatus, detail?: string) => onStatus(opts.role, status, detail),
+    onStatus: (status: LinkStatus, detail?: string, fatal?: boolean) => onStatus(opts.role, status, detail, fatal),
     onMessage: (m: NetMessage) => onMessage(opts.role, m),
   };
 
