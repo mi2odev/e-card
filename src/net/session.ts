@@ -415,25 +415,44 @@ function stopHeartbeat(): void {
 /** Build the pipe for `opts` and hand it to the session. Used to start and to redial. */
 async function openLink(opts: StartOptions): Promise<void> {
   const driver = DRIVERS[opts.kind];
+
+  helloSent = false;
+  lastKey = '';
+  const mine = ++generation;
+
+  /**
+   * Whether this dial is still the one the session wants.
+   *
+   * A dial is not always quick — a hotspot guest goes looking for the other
+   * phone — so the player can walk away from the table, or the link can be
+   * redialled, while one is still in the air. Everything an abandoned dial has
+   * to say is about a table nobody is at any more: it must neither reach the
+   * store, where it would leave the title screen reporting a connection, nor go
+   * on dialling a phone nobody is waiting for.
+   */
+  const wanted = () => mine === generation && !leaving;
+
   const where = {
     code: opts.code,
     address: opts.address ?? '',
     port: opts.port ?? DEFAULT_PORT,
     hotspot: opts.hotspot === true,
+    stillWanted: wanted,
   };
   const events = {
-    onStatus: (status: LinkStatus, detail?: string, fatal?: boolean) => onStatus(opts.role, status, detail, fatal),
-    onMessage: (m: NetMessage) => onMessage(opts.role, m),
+    onStatus: (status: LinkStatus, detail?: string, fatal?: boolean) => {
+      if (wanted()) onStatus(opts.role, status, detail, fatal);
+    },
+    onMessage: (m: NetMessage) => {
+      if (wanted()) onMessage(opts.role, m);
+    },
   };
 
-  helloSent = false;
-  lastKey = '';
-  const mine = ++generation;
   const created = opts.role === 'host' ? await driver.host(where, events) : await driver.join(where, events);
 
   // A dial that failed while it was being made has already been given up on and
   // replaced by the next one; whatever it hands back now is nobody's link.
-  if (mine !== generation || leaving) {
+  if (!wanted()) {
     created.close();
     return;
   }
@@ -551,7 +570,11 @@ export function stopSession(reason?: string): void {
   // Park the table on the way out, so the seat can be taken again. An accidental
   // exit and a deliberate one look identical from here — only the player knows
   // which it was, so both are kept.
-  if (net.active && table) {
+  //
+  // A table the two phones never met at is not one to offer back, though:
+  // walking away from a dial that never landed would otherwise leave the
+  // two-phones screen saying YOU LEFT A TABLE about a table that never was.
+  if (net.active && table && everPaired) {
     parked = { table, snap: makeSnapshot(useGame.getState(), seatOf(table.role)) };
   }
 

@@ -117,8 +117,11 @@ const SEARCH_MS = 6000;
  * is nothing to type here and nothing to correct, so the only useful answer to
  * "nobody answered" is to ask again.
  */
-const HUNT_MS = 45_000;
+const HUNT_MS = 20_000;
 const BETWEEN_SWEEPS_MS = 700;
+
+/** How often a search in progress asks whether anyone still wants it. */
+const ABANDON_CHECK_MS = 250;
 
 /**
  * Dial every candidate address at once and keep the first that answers, closing
@@ -133,6 +136,7 @@ export function firstAnswering(
   port: number,
   code: string,
   timeoutMs = SEARCH_MS,
+  stillWanted?: () => boolean,
 ): Promise<Answer | null> {
   return new Promise((resolve) => {
     const dialled: WebSocket[] = [];
@@ -144,6 +148,7 @@ export function firstAnswering(
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      clearInterval(abandoned);
       for (const other of dialled) {
         if (other === winner?.socket) continue;
         try {
@@ -160,6 +165,13 @@ export function firstAnswering(
       resolve(winner);
     };
     const timer = setTimeout(() => finish(null), timeoutMs);
+    // Walking away from the table drops every socket in the air, rather than
+    // leaving them to dial out the rest of the search on their own.
+    const abandoned = stillWanted
+      ? setInterval(() => {
+          if (!stillWanted()) finish(null);
+        }, ABANDON_CHECK_MS)
+      : undefined;
 
     for (const address of addresses) {
       let socket: WebSocket;
@@ -385,18 +397,31 @@ async function joinHotspot(opts: JoinOptions, ev: LinkEvents): Promise<Link> {
   let tried: string[] = typed ? [typed] : [];
   let found: Answer | null = null;
 
-  for (let sweep = 1; ; sweep++) {
+  const wanted = () => opts.stillWanted?.() !== false;
+
+  for (let sweep = 1; wanted(); sweep++) {
     ev.onStatus('connecting', sweep === 1 ? LOOKING : `${LOOKING} (${sweep})`);
     const targets = typed ? [typed] : hotspotTargets(await localIpAddress(2));
     if (targets.length) tried = targets;
 
-    found = await firstAnswering(targets, opts.port, opts.code);
+    found = await firstAnswering(targets, opts.port, opts.code, SEARCH_MS, opts.stillWanted);
     if (found || Date.now() >= deadline) break;
     await sleep(BETWEEN_SWEEPS_MS);
   }
 
+  if (found && !wanted()) {
+    // Answered, but into an empty room: the player left while it was looking.
+    try {
+      found.socket.close();
+    } catch {
+      /* already gone */
+    }
+    found = null;
+  }
+
   if (!found) {
-    ev.onStatus('error', noHotspotTable(tried, opts.port));
+    // Nobody to tell, if the search was abandoned rather than spent.
+    if (wanted()) ev.onStatus('error', noHotspotTable(tried, opts.port));
     return deadLink;
   }
 
