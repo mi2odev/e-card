@@ -92,6 +92,13 @@ npm start            # Metro and the relay together
 npm run relay        # or the relay on its own, on some other machine
 ```
 
+**Whoever presses first waits.** A dial that lands nowhere is tried again for
+half a minute or so, on both sides and in every mode — the usual reason nothing
+answers is that the other player is a few seconds behind, not that anything is
+wrong. The address it could not reach stays on screen while it tries, so a real
+typo is no harder to spot, and the lobby has a **TRY AGAIN** button for a longer
+wait than that.
+
 **If a phone says it cannot reach the relay,** open that same address in the phone's
 browser (`http://192.168.1.20:8787`). The relay answers plain browser visits with a page
 saying it is running, so:
@@ -136,8 +143,13 @@ The order does not matter. Whoever presses first waits at the table and the othe
 found when they arrive — the guest keeps looking for about three quarters of a minute, and
 says so while it does.
 
-**The phone sharing the hotspot is the one that opens the table** — and it needs the built
-app, since serving means opening a port. The phone joining can stay on Expo Go.
+**The phone sharing the hotspot is the one that opens the table** — and it needs a build
+that can open a port, which Expo Go is not. The phone joining can stay on Expo Go.
+
+If a phone says it **cannot open a port**, that is the whole of what the app knows: normal
+in Expo Go, and in a downloaded app it means the build went out without the native part
+that does it. It is never reported as a port already in use — that is said in those words
+instead, and is usually the table this same phone opened a minute ago.
 
 There is no address field because neither phone could fill one in. A phone that is *sharing*
 a hotspot cannot read its own address off that interface: both platforms report the Wi-Fi

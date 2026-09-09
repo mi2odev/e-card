@@ -637,6 +637,45 @@ async function testHotspot() {
   }
 
   await testHotspotBeforeTheTableOpens();
+  await testHotspotCannotShare();
+}
+
+/**
+ * A copy with no way to open a port cannot serve a hotspot table, and no amount
+ * of dialling will change that — so it is said once, plainly, and the phone is
+ * not left looking like it is getting somewhere. It must also not tell a phone
+ * that downloaded the app that it is running Expo Go.
+ */
+async function testHotspotCannotShare() {
+  const G = {
+    session: await import('../src/net/session.ts?device=hs3'),
+    net: await import('../src/store/useNet.ts?device=hs3'),
+  };
+  try {
+    await G.session.startSession({
+      kind: 'wifi',
+      role: 'host',
+      hotspot: true,
+      code: ROOM,
+      address: '',
+      port: PORT + 16,
+      name: 'Kaiji',
+    });
+    const net = () => G.net.useNet.getState();
+    await until(() => net().status === 'error', 'a copy that cannot open a port says so');
+    check(!net().retrying, 'and does not sit there dialling something that cannot work', {
+      retrying: net().retrying,
+      attempt: net().attempt,
+    });
+    check(
+      net().detail.includes('DOWNLOADED'),
+      'telling a downloaded app what it means there, not only what Expo Go means',
+      net().detail,
+    );
+  } finally {
+    G.session.stopSession();
+    await sleep(100);
+  }
 }
 
 /**
@@ -1076,15 +1115,28 @@ async function testUnreachable() {
     port: PORT + 3,
     name: 'Nobody',
   });
-  await until(() => E.net.useNet.getState().status === 'error', 'a dial that lands nowhere reports an error');
-  const detail = E.net.useNet.getState().detail;
-  check(detail.includes(`127.0.0.1:${PORT + 3}`), 'naming the address it could not reach', detail);
-  check(detail.includes('SAME WI-FI'), 'and what to check about it', detail);
+  // A dial that lands nowhere is very often a table that is not open yet — the
+  // other player is a few seconds behind — so it is tried again rather than
+  // written off, and the diagnosis stays on screen while it is.
+  await until(() => E.net.useNet.getState().retrying, 'a dial that lands nowhere is tried again, not written off');
+  const trying = E.net.useNet.getState().detail;
+  check(trying.includes(`127.0.0.1:${PORT + 3}`), 'naming the address it could not reach while it tries', trying);
+  check(trying.includes('TRYING AGAIN'), 'and saying that is what it is doing', trying);
   check(
-    !detail.includes('LEFT THE TABLE'),
+    !trying.includes('LEFT THE TABLE'),
     'never blaming a phone that was never connected',
-    detail,
+    trying,
   );
+
+  // And it stops, rather than dialling a wrong address until the battery runs out.
+  await until(
+    () => E.net.useNet.getState().status === 'error' && !E.net.useNet.getState().retrying,
+    'and gives up in the end rather than dialling for ever',
+    40_000,
+  );
+  const detail = E.net.useNet.getState().detail;
+  check(detail.includes(`127.0.0.1:${PORT + 3}`), 'still naming the address it could not reach', detail);
+  check(detail.includes('SAME WI-FI'), 'and what to check about it', detail);
   E.session.stopSession();
 }
 

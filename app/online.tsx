@@ -44,6 +44,8 @@ export default function OnlineScreen() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [ownIp, setOwnIp] = useState('');
+  /** Whether the asking is over, so "still looking" can stop being the answer. */
+  const [askedForIp, setAskedForIp] = useState(false);
 
   // Same as everywhere a name is typed: make room for the keyboard, and put the
   // field being filled in where the player can see it.
@@ -60,7 +62,10 @@ export default function OnlineScreen() {
     setAddress((a) => a || defaultRelayAddress());
     // Asked with a few goes: a phone that has just come onto the Wi-Fi has no
     // address to give for a second or two, and this one is read out loud.
-    void localIpAddress(6).then(setOwnIp);
+    void localIpAddress(6).then((ip) => {
+      setOwnIp(ip);
+      setAskedForIp(true);
+    });
   }, []);
 
   const onHotspot = hotspot;
@@ -304,8 +309,8 @@ export default function OnlineScreen() {
               </Text>
               {role === 'host' && !canServe ? (
                 <Text style={{ fontFamily: F.bold, fontSize: 9, letterSpacing: 1.2, color: C.rustText, lineHeight: 13 }}>
-                  THIS COPY RUNS INSIDE EXPO GO, WHICH IS NOT ALLOWED TO OPEN A PORT — SO IT CANNOT SERVE THE TABLE. THE
-                  PHONE SHARING THE HOTSPOT NEEDS THE BUILT APP; THE OTHER ONE CAN STAY ON EXPO GO.
+                  THIS COPY CANNOT OPEN A PORT, SO IT CANNOT SERVE THE TABLE — NORMAL IN EXPO GO, WHICH IS NOT ALLOWED
+                  ONE. THE PHONE SHARING THE HOTSPOT NEEDS A BUILD THAT CAN; THE OTHER ONE DOES NOT.
                 </Text>
               ) : null}
             </Appear>
@@ -328,11 +333,24 @@ export default function OnlineScreen() {
                 THIS PHONE SERVES THE TABLE
               </Text>
               <Text style={{ fontFamily: F.display, fontSize: 26, lineHeight: 28, letterSpacing: 1, color: C.goldBright }}>
-                {ownIp ? `${ownIp}:${DEFAULT_PORT}` : 'FINDING THIS PHONE ON THE WI-FI…'}
+                {ownIp
+                  ? `${ownIp}:${DEFAULT_PORT}`
+                  : askedForIp
+                    ? `PORT ${DEFAULT_PORT}`
+                    : 'FINDING THIS PHONE ON THE WI-FI…'}
               </Text>
               <Text style={{ fontFamily: F.body, fontSize: 9, letterSpacing: 1.2, color: C.muted7, lineHeight: 13 }}>
                 NO COMPUTER NEEDED. THE OTHER PHONE ENTERS THIS ADDRESS AND THE CODE ABOVE, ON THE SAME WI-FI.
               </Text>
+              {askedForIp && !ownIp ? (
+                // The table is served either way — but an address nobody can read
+                // out is no use to the other phone, and saying "finding it…" for
+                // ever is worse than saying it was not found.
+                <Text style={{ fontFamily: F.bold, fontSize: 9, letterSpacing: 1.2, color: C.rustText, lineHeight: 13 }}>
+                  THIS PHONE WILL NOT SAY WHICH ADDRESS IT IS ON. THE TABLE IS STILL SERVED — LOOK THE ADDRESS UP IN
+                  WI-FI SETTINGS, OR USE HOTSPOT ABOVE, WHERE THERE IS NOTHING TO READ OUT AT ALL.
+                </Text>
+              ) : null}
             </Appear>
           ) : null}
 
@@ -367,8 +385,8 @@ export default function OnlineScreen() {
                 <Text
                   style={{ fontFamily: F.bold, fontSize: 9, letterSpacing: 1.2, color: C.rustText, marginTop: 10, lineHeight: 13 }}
                 >
-                  THIS COPY RUNS INSIDE EXPO GO, WHICH IS NOT ALLOWED TO OPEN A PORT — SO A COMPUTER HAS TO SIT IN THE
-                  MIDDLE. BUILD THE APP AND THIS PHONE HOSTS THE TABLE ITSELF, WITH NO COMPUTER AT ALL.
+                  THIS COPY CANNOT OPEN A PORT, SO A COMPUTER HAS TO SIT IN THE MIDDLE — NORMAL IN EXPO GO, WHICH IS NOT
+                  ALLOWED ONE. A BUILD THAT CAN OPEN ONE HOSTS THE TABLE ON THIS PHONE, WITH NO COMPUTER AT ALL.
                 </Text>
               ) : null}
             </Appear>

@@ -5,7 +5,13 @@ import type { LinkStatus, NetMessage } from './protocol';
 export type TransportKind = 'wifi';
 
 export type LinkEvents = {
-  onStatus: (status: LinkStatus, detail?: string) => void;
+  /**
+   * `fatal` marks a failure that dialling again cannot mend — this copy has no
+   * way to open a port, the port is held by something else — as against the
+   * ordinary kind, where the other phone is simply not open yet and the answer
+   * is to try once more.
+   */
+  onStatus: (status: LinkStatus, detail?: string, fatal?: boolean) => void;
   onMessage: (msg: NetMessage) => void;
 };
 
