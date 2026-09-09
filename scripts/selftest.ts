@@ -561,6 +561,11 @@ async function testHotspot() {
     'and never dials itself',
     hotspotTargets('192.168.43.1'),
   );
+  check(
+    hotspotTargets('192.168.5.9').includes('192.168.5.254'),
+    'the far end of the range is worth a try too',
+    hotspotTargets('192.168.5.9'),
+  );
 
   const nodeNet = await import('node:net');
   const { attachHostConnection } = await import('../src/net/ws/hostServer.ts');
@@ -629,6 +634,132 @@ async function testHotspot() {
     await sleep(150);
   } finally {
     server.close();
+  }
+
+  await testHotspotBeforeTheTableOpens();
+  await testHotspotCannotServe();
+}
+
+/**
+ * The guest presses JOIN first — which is the usual way round, since the phone
+ * that is not setting anything up is the phone that is ready sooner. Nothing on
+ * this screen can be typed or corrected, so the only answer to "nobody answered"
+ * is to ask again until the other phone is open.
+ */
+async function testHotspotBeforeTheTableOpens() {
+  const nodeNet = await import('node:net');
+  const { attachHostConnection } = await import('../src/net/ws/hostServer.ts');
+  const port = PORT + 13;
+
+  const server = nodeNet.createServer((sock) => {
+    let conn: { send: (t: string) => void } | null = null;
+    attachHostConnection(
+      {
+        write: (b) => sock.write(Buffer.from(b)),
+        destroy: () => sock.destroy(),
+        onData: (cb) => sock.on('data', (d) => cb(new Uint8Array(d))),
+        onClose: (cb) => sock.on('close', cb),
+        onError: (cb) => sock.on('error', cb),
+      },
+      ROOM,
+      {
+        onOpen: (c) => {
+          conn = c;
+        },
+        onText: (t) => {
+          if (JSON.parse(t).t === 'hello') conn?.send(JSON.stringify({ t: 'welcome', v: 1, name: 'Kaiji' }));
+        },
+        onClose: () => {},
+      },
+    );
+  });
+
+  const G = {
+    session: await import('../src/net/session.ts?device=hs2'),
+    net: await import('../src/store/useNet.ts?device=hs2'),
+  };
+
+  try {
+    void G.session.startSession({
+      kind: 'wifi',
+      role: 'guest',
+      hotspot: true,
+      code: ROOM,
+      address: '127.0.0.1',
+      port,
+      name: 'Tonegawa',
+    });
+    await sleep(400);
+    eq(G.net.useNet.getState().status, 'connecting', 'a guest that finds nothing is still looking, not failed');
+
+    // The other player finally presses OPEN THE TABLE.
+    await sleep(7000);
+    await new Promise<void>((r) => server.listen(port, '127.0.0.1', r));
+    await until(
+      () => G.net.useNet.getState().status === 'connected',
+      'and sits down when the table opens, without being asked again',
+      20_000,
+    );
+  } finally {
+    G.session.stopSession();
+    await sleep(150);
+    server.close();
+  }
+}
+
+/**
+ * A build that *can* serve a table and this time could not — the port is still
+ * held by the last one. Blaming Expo Go there sends a player off to build an app
+ * they are already running.
+ */
+async function testHotspotCannotServe() {
+  const nodeNet = await import('node:net');
+  const port = PORT + 14;
+
+  const squatter = nodeNet.createServer(() => {});
+  await new Promise<void>((r) => squatter.listen(port, '0.0.0.0', r));
+
+  // Stand in for the native halves a dev build has and this test process has not.
+  const fakeTcp = {
+    createServer(handler: (s: unknown) => void) {
+      const srv = nodeNet.createServer((sock) => {
+        handler({
+          on: (ev: string, cb: (a?: unknown) => void) => sock.on(ev, cb),
+          write: (b: Uint8Array) => sock.write(Buffer.from(b)),
+          destroy: () => sock.destroy(),
+        });
+      });
+      return {
+        listen: (o: { port: number; host: string }, cb?: () => void) => srv.listen(o.port, o.host, cb),
+        on: (ev: string, cb: (a?: unknown) => void) => srv.on(ev, cb),
+        close: () => srv.close(),
+      };
+    },
+  };
+  const shim = (name: string) => {
+    if (name === 'react-native-tcp-socket') return fakeTcp;
+    if (name === 'react-native') return { NativeModules: { TcpSockets: {} } };
+    throw new Error(`no module ${name}`);
+  };
+  const hadRequire = 'require' in globalThis;
+  (globalThis as { require?: unknown }).require = shim;
+
+  try {
+    const { wifiDriver, wifiHostsItself } = await import('../src/net/wifi.ts?device=serve');
+    check(wifiHostsItself(), 'a build with the native half says it can serve');
+
+    let said = '';
+    await wifiDriver.host(
+      { code: ROOM, address: '', port, hotspot: true },
+      { onStatus: (s, d) => { if (s === 'error') said = d ?? ''; }, onMessage: () => {} },
+    );
+    check(said.includes(`PORT ${port}`), 'a port it could not open is named', said);
+    check(said.includes('ALREADY IN USE'), 'along with why it could not', said);
+    check(!said.includes('EXPO GO'), 'and Expo Go is not blamed for a build that has the port', said);
+  } finally {
+    if (hadRequire) (globalThis as { require?: unknown }).require = undefined;
+    delete (globalThis as { require?: unknown }).require;
+    squatter.close();
   }
 }
 

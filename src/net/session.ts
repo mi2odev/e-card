@@ -467,8 +467,12 @@ export async function startSession(opts: StartOptions): Promise<void> {
 export async function resumeSession(): Promise<void> {
   const saved = parked;
   if (!saved) return;
-  await startSession(saved.table);
+  // The board goes back before the dial is waited on, not after: a hotspot guest
+  // can be looking for the other phone for a while, and the match it walked away
+  // from should be there to look at in the meantime, not a blank table.
+  const started = startSession(saved.table);
   useGame.setState((s) => applySnapshot(saved.snap, s));
+  await started;
 }
 
 /** Dial the table again now. The banner and the lobby offer this by hand. */

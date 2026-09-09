@@ -46,16 +46,26 @@ export function defaultRelayAddress(): string {
  * A phone that is *sharing* a hotspot rather than joined to one has no answer
  * here — on both platforms this reads the Wi-Fi client interface, which is down
  * while the phone is the access point. That is what `hotspotTargets` is for.
+ *
+ * `attempts` above 1 asks again after a moment, for the caller that would rather
+ * wait than be told the phone does not know where it is.
  */
-export async function localIpAddress(): Promise<string> {
+export async function localIpAddress(attempts = 1): Promise<string> {
   const api = network();
   if (!api) return '';
-  try {
-    const ip = await api.getIpAddressAsync();
-    return IPV4.test(ip) && ip !== '0.0.0.0' && !ip.startsWith('127.') ? ip : '';
-  } catch {
-    return '';
+  // A phone that has just joined a network has no address for a moment — the
+  // lease is still being taken out — and a hotspot guest is asking at exactly
+  // that moment. One empty answer is not a no.
+  for (let i = 0; i < Math.max(1, attempts); i++) {
+    if (i) await new Promise((r) => setTimeout(r, 350));
+    try {
+      const ip = await api.getIpAddressAsync();
+      if (IPV4.test(ip) && ip !== '0.0.0.0' && !ip.startsWith('127.')) return ip;
+    } catch {
+      /* ask again */
+    }
   }
+  return '';
 }
 
 /**
@@ -73,12 +83,15 @@ export function hotspotTargets(ownIp: string): string[] {
   const out: string[] = [];
   const own = ownIp.trim();
   const octets = IPV4.test(own) ? own.split('.') : null;
-  if (octets) {
-    const gateway = `${octets[0]}.${octets[1]}.${octets[2]}.1`;
-    if (gateway !== own) out.push(gateway);
-  }
-  for (const guess of HOTSPOT_GATEWAYS) {
-    if (guess !== own && !out.includes(guess)) out.push(guess);
-  }
+  const add = (address: string) => {
+    if (address !== own && !out.includes(address)) out.push(address);
+  };
+
+  if (octets) add(`${octets[0]}.${octets[1]}.${octets[2]}.1`);
+  for (const guess of HOTSPOT_GATEWAYS) add(guess);
+  // Last, and least likely: the other end of the range, which is where a few
+  // Android builds put the access point. Dialled with the rest, so a guess that
+  // goes nowhere costs nothing but a socket.
+  if (octets) add(`${octets[0]}.${octets[1]}.${octets[2]}.254`);
   return out;
 }

@@ -121,6 +121,10 @@ to type but the four-character code.
 3. Phone A: **OPEN → HOTSPOT**, and reads out the code.
 4. Phone B: **JOIN → HOTSPOT**, types the code, and presses join.
 
+The order does not matter. Whoever presses first waits at the table and the other one is
+found when they arrive — the guest keeps looking for about three quarters of a minute, and
+says so while it does.
+
 **The phone sharing the hotspot is the one that opens the table** — and it needs the built
 app, since serving means opening a port. The phone joining can stay on Expo Go.
 
@@ -131,12 +135,18 @@ not using. So the guest works it out instead. The phone handing out addresses is
 gateway of the network it made, so the guest takes its own address (`172.20.10.4`, say) and
 dials the gateway (`172.20.10.1`), along with the addresses iOS, Android and Windows hand
 out by convention — all at once, keeping whichever answers. A table turns away the wrong
-room code during the handshake, so anything that answers *is* the table.
+room code during the handshake, so anything that answers *is* the table. A phone that has
+only just joined the hotspot may not know its own address for a second or two, so the whole
+list is worked out afresh on every pass rather than once.
 
-If nothing answers, the app says which address it tried. Usually the phones are not
-actually on the same hotspot, or the sharing phone has not pressed **OPEN THE TABLE** yet.
-Some Androids will not turn a hotspot on without mobile data, even though the game needs
-none of it.
+If nothing answers in the end, the app names every address it tried. Usually the phones are
+not actually on the same hotspot. Some Androids will not turn a hotspot on without mobile
+data, even though the game needs none of it.
+
+If the sharing phone says it **could not open the port**, that is not Expo Go talking — a
+build that cannot serve at all says so in those words instead. It means something already
+has port 8787, almost always the table this same phone opened a minute ago; leave the table
+properly, give it a moment, and open it again.
 
 ### Building it as a real app — one phone hosts, no computer
 
