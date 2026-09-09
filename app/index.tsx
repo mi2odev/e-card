@@ -1,8 +1,24 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import {
+  Image,
+  type ImageSourcePropType,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withSequence,
+  withTiming,
+} from 'react-native-reanimated';
 import { C, F } from '../src/theme';
 import { CARD_ART } from '../src/assets';
 import { CARD_RATIO } from '../src/ui/Cards';
@@ -23,6 +39,33 @@ import { useGame } from '../src/store/useGame';
 import { useNet } from '../src/store/useNet';
 import { resumeSession } from '../src/net/session';
 import { tapLight } from '../src/haptics';
+
+type Card = 'C' | 'S' | 'E';
+
+/** Room above the cluster for a card to come up into, without the fold clipping it. */
+const HEADROOM = 20;
+
+/** One card of the title cluster: the art, and the whole of it a target. */
+function HeroCard({
+  source,
+  label,
+  onPress,
+}: {
+  source: ImageSourcePropType;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="image"
+      accessibilityLabel={label}
+      style={{ width: '100%', height: '100%' }}
+    >
+      <Image source={source} style={{ width: '100%', height: '100%', borderRadius: 8 }} />
+    </Pressable>
+  );
+}
 
 /** A slice of one timeline, so the pieces of the opening land one after another. */
 function phase(t: number, from: number, to: number): number {
@@ -64,33 +107,66 @@ export default function TitleScreen() {
     intro.value = withTiming(1, { duration: 1150, easing: Easing.out(Easing.cubic) });
   }, [intro]);
 
+  // Touch one and it comes off the table for a moment, taking a little of the
+  // pile with it — the three of them are a deck, not a picture.
+  const pokeC = useSharedValue(0);
+  const pokeS = useSharedValue(0);
+  const pokeE = useSharedValue(0);
+  const [front, setFront] = useState<Card | null>(null);
+
+  const poke = (card: Card) => {
+    tapLight();
+    setFront(card);
+    for (const [which, value] of [
+      ['C', pokeC],
+      ['S', pokeS],
+      ['E', pokeE],
+    ] as const) {
+      const to = which === card ? 1 : 0.3;
+      value.value = withSequence(
+        withTiming(to, { duration: 150, easing: Easing.bezier(0.2, 0.8, 0.3, 1.2) }),
+        withTiming(0, { duration: 520, easing: Easing.out(Easing.cubic) }),
+      );
+    }
+  };
+
   const cardLeft = useAnimatedStyle(() => {
     const p = phase(intro.value, 0, 0.5);
+    const k = pokeC.value;
     return {
       opacity: p,
       transform: [
-        { translateX: 26 * (1 - p) },
-        { translateY: 54 * (1 - p) },
-        { rotate: `${-13 * p - 30 * (1 - p)}deg` },
-        { scale: 0.82 + 0.18 * p },
+        { translateX: 26 * (1 - p) - 7 * k },
+        { translateY: 54 * (1 - p) - 18 * k },
+        { rotate: `${-13 * p - 30 * (1 - p) - 8 * k}deg` },
+        { scale: (0.82 + 0.18 * p) * (1 + 0.09 * k) },
       ],
     };
   });
   const cardRight = useAnimatedStyle(() => {
     const p = phase(intro.value, 0.1, 0.6);
+    const k = pokeS.value;
     return {
       opacity: p,
       transform: [
-        { translateX: -26 * (1 - p) },
-        { translateY: 54 * (1 - p) },
-        { rotate: `${13 * p + 30 * (1 - p)}deg` },
-        { scale: 0.82 + 0.18 * p },
+        { translateX: -26 * (1 - p) + 7 * k },
+        { translateY: 54 * (1 - p) - 18 * k },
+        { rotate: `${13 * p + 30 * (1 - p) + 8 * k}deg` },
+        { scale: (0.82 + 0.18 * p) * (1 + 0.09 * k) },
       ],
     };
   });
   const cardMiddle = useAnimatedStyle(() => {
     const p = phase(intro.value, 0.22, 0.74);
-    return { opacity: p, transform: [{ translateY: 66 * (1 - p) }, { scale: 0.78 + 0.22 * p }] };
+    const k = pokeE.value;
+    return {
+      opacity: p,
+      transform: [
+        { translateY: 66 * (1 - p) - 20 * k },
+        { rotate: `${4 * k}deg` },
+        { scale: (0.78 + 0.22 * p) * (1 + 0.09 * k) },
+      ],
+    };
   });
   const wordmarkStyle = useAnimatedStyle(() => {
     const p = phase(intro.value, 0.34, 0.86);
@@ -136,36 +212,66 @@ export default function TitleScreen() {
               style={{ alignItems: 'center' }}
               onLayout={(e) => setHeroHeight((h) => h || Math.round(e.nativeEvent.layout.height))}
             >
-              {/* card cluster */}
-              <View style={{ width: 238, height: 156 }}>
-                <Glow color="rgba(212,165,60,0.26)" style={{ left: 14, top: 38, width: 210, height: 110 }} edge={0.68} />
-                <Animated.Image
-                  source={CARD_ART.C}
+              {/* card cluster — HEADROOM at the top is the space a poked card
+                  lifts into, taken back off the wordmark below so nothing moves */}
+              <View style={{ width: 238, height: 156 + HEADROOM }}>
+                <Glow
+                  color="rgba(212,165,60,0.26)"
+                  style={{ left: 14, top: 38 + HEADROOM, width: 210, height: 110 }}
+                  edge={0.68}
+                />
+                <Animated.View
                   style={[
-                    { position: 'absolute', left: 14, top: 22, width: 86, height: 86 * CARD_RATIO, borderRadius: 8 },
+                    {
+                      position: 'absolute',
+                      left: 14,
+                      top: 22 + HEADROOM,
+                      width: 86,
+                      height: 86 * CARD_RATIO,
+                      zIndex: front === 'C' ? 6 : 1,
+                    },
                     shadow(10, 22, 0.6, 6),
                     cardLeft,
                   ]}
-                />
-                <Animated.Image
-                  source={CARD_ART.S}
+                >
+                  <HeroCard source={CARD_ART.C} label="Citizen" onPress={() => poke('C')} />
+                </Animated.View>
+                <Animated.View
                   style={[
-                    { position: 'absolute', right: 14, top: 22, width: 86, height: 86 * CARD_RATIO, borderRadius: 8 },
+                    {
+                      position: 'absolute',
+                      right: 14,
+                      top: 22 + HEADROOM,
+                      width: 86,
+                      height: 86 * CARD_RATIO,
+                      zIndex: front === 'S' ? 6 : 2,
+                    },
                     shadow(10, 22, 0.6, 6),
                     cardRight,
                   ]}
-                />
-                <Animated.Image
-                  source={CARD_ART.E}
+                >
+                  <HeroCard source={CARD_ART.S} label="Slave" onPress={() => poke('S')} />
+                </Animated.View>
+                <Animated.View
                   style={[
-                    { position: 'absolute', left: '50%', marginLeft: -47, top: 2, width: 94, height: 94 * CARD_RATIO, borderRadius: 8, zIndex: 3 },
+                    {
+                      position: 'absolute',
+                      left: '50%',
+                      marginLeft: -47,
+                      top: 2 + HEADROOM,
+                      width: 94,
+                      height: 94 * CARD_RATIO,
+                      zIndex: front === 'E' ? 6 : 3,
+                    },
                     shadow(14, 28, 0.68, 10),
                     cardMiddle,
                   ]}
-                />
+                >
+                  <HeroCard source={CARD_ART.E} label="Emperor" onPress={() => poke('E')} />
+                </Animated.View>
               </View>
 
-              <Animated.View style={[{ marginTop: 16 }, wordmarkStyle]}>
+              <Animated.View style={[{ marginTop: 16 - HEADROOM }, wordmarkStyle]}>
                 <GradientText style={{ fontFamily: F.display, fontSize: 76, lineHeight: 74, letterSpacing: 7, textAlign: 'center' }}>
                   E-CARD
                 </GradientText>
@@ -177,7 +283,7 @@ export default function TitleScreen() {
                 </Text>
                 <GoldHairline style={{ marginTop: 12 }} />
                 <Text style={{ marginTop: 10, fontFamily: F.body, fontSize: 10, letterSpacing: 2.5, color: C.muted5 }}>
-                  TWO PLAYERS · ONE DEVICE · NO MERCY
+                  TWO PLAYERS · NO MERCY
                 </Text>
               </Animated.View>
             </View>
