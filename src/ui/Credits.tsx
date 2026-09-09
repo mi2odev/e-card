@@ -40,19 +40,19 @@ const open = (url: string) => {
 };
 
 /**
- * The author's picture, in its frame.
+ * The author's picture, in a gold ring.
  *
  * `assets/credits/author.png` is the whole of it — swap that file and both the
- * button and the sheet change with it, no code involved. Cropped to fill, so any
- * shape of picture sits properly in either frame.
+ * button and the sheet change with it, no code involved. Round, and cropped to
+ * fill, so a square picture lands exactly and any other shape keeps its middle.
  */
-function Portrait({ width, height, radius }: { width: number | `${number}%`; height: number; radius: number }) {
+function Portrait({ size }: { size: number }) {
   return (
     <View
       style={{
-        width,
-        height,
-        borderRadius: radius,
+        width: size,
+        height: size,
+        borderRadius: size / 2,
         borderWidth: 1,
         borderColor: C.goldBorder,
         backgroundColor: 'rgba(212,165,60,0.06)',
@@ -91,7 +91,7 @@ export function CreditsButton({ style }: { style?: ViewStyle }) {
           style,
         ]}
       >
-        <Portrait width={52} height={40} radius={9} />
+        <Portrait size={44} />
         <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
           <Text style={{ fontFamily: F.body, fontSize: 8.5, letterSpacing: 2.2, color: C.muted3 }}>CODED BY</Text>
           <Text numberOfLines={1} style={{ fontFamily: F.bold, fontSize: 11.5, letterSpacing: 1.4, color: C.creamMute }}>
@@ -188,7 +188,7 @@ export function CreditsModal({ visible, onClose }: { visible: boolean; onClose: 
               </View>
 
               <Appear duration={380} from={12} style={{ alignItems: 'center', marginTop: 18 }}>
-                <Portrait width="100%" height={148} radius={13} />
+                <Portrait size={132} />
                 <Text style={{ marginTop: 12, fontFamily: F.body, fontSize: 9, letterSpacing: 3, color: C.muted3 }}>
                   DESIGNED AND CODED BY
                 </Text>

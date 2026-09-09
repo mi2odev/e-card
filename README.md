@@ -213,10 +213,10 @@ assets/icon.png  assets/adaptive-icon.png  assets/splash.png
 
 Card art is drawn at a 3:4 aspect ratio (`resizeMode: cover`) — 900×1200 px is plenty.
 
-`assets/credits/author.png` is whatever you want next to your name: it fills a wide frame
-in the credits sheet and a small one on the button that opens it, cropped to fill from the
-centre in both. Anything landscape and roughly 3:2 lands the same way in both frames — the
-placeholder in the repo is 768×400. Keep whatever matters near the middle.
+`assets/credits/author.png` is whatever you want next to your name: it fills a gold ring at
+the head of the credits sheet and a small one on the button that opens it. Both are round
+and crop to fill from the centre, so a square picture lands exactly as drawn — anything else
+keeps its middle and loses its edges.
 
 ## Layout
 
