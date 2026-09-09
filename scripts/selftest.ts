@@ -638,6 +638,54 @@ async function testHotspot() {
 
   await testHotspotBeforeTheTableOpens();
   await testHotspotCannotShare();
+  await testLeavingMidSearch();
+}
+
+/**
+ * A search can be running for a good while, and the player can walk away from
+ * the table in the middle of it. What is left dialling then is dialling for
+ * nobody — and anything it has to say is about a table that no longer exists,
+ * so it must not reach the store either. Left to itself it put the title screen
+ * back into "connecting" a moment after the player had left.
+ */
+async function testLeavingMidSearch() {
+  const nodeNet = await import('node:net');
+  const port = PORT + 17;
+
+  let dials = 0;
+  const sink = nodeNet.createServer((sock) => {
+    dials++;
+    sock.destroy();
+  });
+  await new Promise<void>((r) => sink.listen(port, '127.0.0.1', r));
+
+  const G = {
+    session: await import('../src/net/session.ts?device=hs4'),
+    net: await import('../src/store/useNet.ts?device=hs4'),
+  };
+
+  try {
+    void G.session.startSession({
+      kind: 'wifi',
+      role: 'guest',
+      hotspot: true,
+      code: ROOM,
+      address: '127.0.0.1',
+      port,
+      name: 'Tonegawa',
+    });
+    await until(() => dials > 0, 'a search that is looking is really dialling');
+
+    G.session.stopSession();
+    const dialledBefore = dials;
+    await sleep(2500);
+
+    eq(dials, dialledBefore, 'and stops the moment the player leaves the table');
+    eq(G.net.useNet.getState().status, 'idle', 'the search it abandoned never speaks again');
+    check(!G.net.useNet.getState().active, 'and the table stays left', G.net.useNet.getState().active);
+  } finally {
+    sink.close();
+  }
 }
 
 /**
@@ -1140,6 +1188,68 @@ async function testUnreachable() {
   E.session.stopSession();
 }
 
+/* ------------------------------------------- whoever presses first waits */
+
+/**
+ * The commonest way for two phones to fail to meet: the player who is not
+ * setting anything up presses their button first, and dials a table that is not
+ * open yet. That used to be the end of it — a dial that never landed was read
+ * as a wrong address and never repeated.
+ */
+async function testPressingFirst() {
+  console.log('\nWhoever presses first waits');
+  const port = PORT + 18;
+
+  const G = {
+    session: await import('../src/net/session.ts?device=first-g'),
+    net: await import('../src/store/useNet.ts?device=first-g'),
+    game: await import('../src/store/useGame.ts?device=first-g'),
+  };
+  const H = { session: await import('../src/net/session.ts?device=first-h') };
+
+  let relay: ReturnType<typeof spawn> | null = null;
+  try {
+    // Nothing is running at all: no relay, no table, nobody there.
+    void G.session.startSession({
+      kind: 'wifi',
+      role: 'guest',
+      code: ROOM,
+      address: '127.0.0.1',
+      port,
+      name: 'Tonegawa',
+    });
+    await until(() => G.net.useNet.getState().retrying, 'a guest that is early keeps dialling');
+    check(
+      G.net.useNet.getState().detail.includes(`127.0.0.1:${port}`),
+      'and still says which address it cannot reach',
+      G.net.useNet.getState().detail,
+    );
+
+    // The other player catches up.
+    relay = spawn('node', [resolvePath(ROOT, 'server/relay.js')], {
+      env: { ...process.env, PORT: String(port) },
+      stdio: ['ignore', 'ignore', 'ignore'],
+    });
+    await sleep(600);
+    await H.session.startSession({
+      kind: 'wifi',
+      role: 'host',
+      code: ROOM,
+      address: '127.0.0.1',
+      port,
+      name: 'Kaiji',
+    });
+
+    await until(() => G.net.useNet.getState().peerHere, 'and sits down by itself when the table opens', 20_000);
+    await until(() => G.game.useGame.getState().p1 === 'Kaiji', 'with nobody having pressed anything again');
+  } finally {
+    G.session.stopSession();
+    H.session.stopSession();
+    await sleep(150);
+    relay?.kill();
+  }
+}
+
 /* -------------------------------------------------------------------- run */
 
 console.log('E-CARD self-test');
@@ -1154,6 +1264,7 @@ await testRedaction();
 await testOnlineMatch();
 await testHotspot();
 await testServedByThisPhone();
+await testPressingFirst();
 await testComingBack();
 await testGoneQuiet();
 await testWarmSeat();

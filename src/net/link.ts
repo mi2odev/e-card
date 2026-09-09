@@ -34,8 +34,16 @@ export type Link = {
  * it is the same Wi-Fi socket — but the host has no address it can read off
  * itself, and the guest has to work out where the host is instead of being told.
  */
-export type HostOptions = { code: string; address: string; port: number; hotspot?: boolean };
-export type JoinOptions = { code: string; address: string; port: number; hotspot?: boolean };
+/**
+ * `stillWanted` goes false once the session has stopped caring about this dial —
+ * the player left the table, or it has already been redialled. A driver that
+ * takes its time finding the other phone is expected to ask, and to give up
+ * when the answer is no.
+ */
+type Dialling = { code: string; address: string; port: number; hotspot?: boolean; stillWanted?: () => boolean };
+
+export type HostOptions = Dialling;
+export type JoinOptions = Dialling;
 
 export type TransportDriver = {
   kind: TransportKind;
