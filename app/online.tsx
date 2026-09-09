@@ -80,27 +80,41 @@ export default function OnlineScreen() {
     return directHost ? ownIp : address.trim();
   };
 
-  /** Take the seat that was left, on the same table, with the match as it stood. */
-  const back = async () => {
-    if (busy) return;
+  /**
+   * Go to the table now and let the dial report itself from there.
+   *
+   * Sitting on the button until the link is up is fine for a relay, which either
+   * answers or does not, and quite wrong for a hotspot: the guest goes looking
+   * for the other phone and can be at it for the best part of a minute, which
+   * from here is a button reading ONE MOMENT and nothing else at all. The table
+   * has the room code, the search saying where it has got to, and a way to try
+   * again — so that is where the waiting belongs.
+   */
+  const waitAtTheTable = (start: Promise<void>) => {
     setBusy(true);
     setError('');
-    try {
-      await resumeSession();
-      router.replace('/lobby');
-    } catch (e) {
-      setError(String((e as { message?: string })?.message ?? e).toUpperCase());
-    } finally {
-      setBusy(false);
-    }
+    router.replace('/lobby');
+    start
+      .catch((e) => {
+        // Drivers report their own failures through the link status; this is for
+        // the unexpected kind, which would otherwise land nowhere at all.
+        const said = String((e as { message?: string })?.message ?? e).toUpperCase();
+        setError(said);
+        useNet.getState().patch({ status: 'error', detail: said });
+      })
+      .finally(() => setBusy(false));
   };
 
-  const go = async () => {
+  /** Take the seat that was left, on the same table, with the match as it stood. */
+  const back = () => {
+    if (busy) return;
+    waitAtTheTable(resumeSession());
+  };
+
+  const go = () => {
     if (!ready) return;
-    setBusy(true);
-    setError('');
-    try {
-      await startSession({
+    waitAtTheTable(
+      startSession({
         kind: 'wifi',
         role,
         code: normalizeRoomCode(code),
@@ -110,15 +124,8 @@ export default function OnlineScreen() {
         hotspot: onHotspot,
         port: DEFAULT_PORT,
         name: p1.trim() || (role === 'host' ? 'Host' : 'Challenger'),
-      });
-      router.replace('/lobby');
-    } catch (e) {
-      // Drivers report their own failures through the link status; this is for
-      // the unexpected kind, so the button never just goes dead.
-      setError(String((e as { message?: string })?.message ?? e).toUpperCase());
-    } finally {
-      setBusy(false);
-    }
+      }),
+    );
   };
 
   return (
@@ -202,7 +209,7 @@ export default function OnlineScreen() {
               <BigButton
                 label={busy ? 'ONE MOMENT…' : 'TAKE YOUR SEAT AGAIN'}
                 fontSize={19}
-                onPress={() => void back()}
+                onPress={back}
                 style={{ marginHorizontal: 12 }}
               />
               <Pressable
@@ -360,7 +367,7 @@ export default function OnlineScreen() {
           <BigButton
             label={busy ? 'ONE MOMENT…' : role === 'host' ? 'OPEN THE TABLE' : 'JOIN THE TABLE'}
             fontSize={24}
-            onPress={() => void go()}
+            onPress={go}
             style={{ marginTop: 18, opacity: ready ? 1 : 0.45 }}
           />
         </ScrollView>

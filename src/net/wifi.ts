@@ -13,7 +13,9 @@
  * `hotspot` tables are the same sockets over a network one of the phones is
  * making itself. There is no router and nothing to type: the phone sharing the
  * connection serves the table directly, and the guest finds it by dialling the
- * handful of addresses a hotspot gateway can have (see ./discover).
+ * handful of addresses a hotspot gateway can have (see ./discover) — over and
+ * over until it answers, since the two players never press their buttons at the
+ * same moment and there is nothing here for either of them to correct.
  */
 
 import { decode, encode, type NetMessage } from './protocol';
@@ -102,8 +104,21 @@ function clientLink(
 
 export type Answer = { socket: WebSocket; address: string };
 
-/** How long the search for a phone sharing a hotspot is given before it reports back. */
+/** How long one pass over the candidate addresses is given before it reports back. */
 const SEARCH_MS = 6000;
+
+/**
+ * How long the guest keeps looking altogether, and how long it rests between
+ * passes.
+ *
+ * One pass is not enough. The two players press their buttons seconds apart, and
+ * whichever of them is quicker is usually the guest — so the common way to fail
+ * is to go looking before the other phone has finished opening the table. There
+ * is nothing to type here and nothing to correct, so the only useful answer to
+ * "nobody answered" is to ask again.
+ */
+const HUNT_MS = 45_000;
+const BETWEEN_SWEEPS_MS = 700;
 
 /**
  * Dial every candidate address at once and keep the first that answers, closing
@@ -132,6 +147,11 @@ export function firstAnswering(
       for (const other of dialled) {
         if (other === winner?.socket) continue;
         try {
+          // Let go of it before closing: a dial that lands a moment later must
+          // not report anything to a search that is already over.
+          other.onopen = null;
+          other.onerror = null;
+          other.onclose = null;
           other.close();
         } catch {
           /* never opened */
@@ -169,24 +189,38 @@ export function firstAnswering(
  * it. The native module can be installed but inert — inside Expo Go, say — and
  * that must fall back to the relay rather than leave the host on a dead socket.
  */
-const LISTEN_TIMEOUT_MS = 2500;
+const LISTEN_TIMEOUT_MS = 4000;
 
-/** Serve the room from this phone. Resolves null if that is not possible here. */
-function tryDirectHost(opts: HostOptions, ev: LinkEvents): Promise<Link | null> {
+/**
+ * What came of trying to serve the room from this phone.
+ *
+ *   null        — there is no in-app server in this build at all. Expo Go.
+ *   { failure } — there is one, and it could not listen. A port still held by the
+ *                 table this phone opened a minute ago is the usual reason, and
+ *                 it is nothing whatever to do with Expo Go.
+ *   { link }    — the table is being served.
+ *
+ * The difference matters: told the wrong one, a player goes off to build an app
+ * they have already built.
+ */
+type DirectAttempt = { link: Link } | { failure: string } | null;
+
+/** Serve the room from this phone. */
+function tryDirectHost(opts: HostOptions, ev: LinkEvents): Promise<DirectAttempt> {
   if (!tcpHostAvailable()) return Promise.resolve(null);
 
-  return new Promise<Link | null>((resolve) => {
+  return new Promise<DirectAttempt>((resolve) => {
     let guest: Connection | null = null;
     let handle: TcpHostHandle | null = null;
     let settled = false;
 
-    const giveUp = () => {
+    const giveUp = (failure: string) => {
       if (settled) return;
       settled = true;
       handle?.stop();
-      resolve(null);
+      resolve({ failure });
     };
-    const timer = setTimeout(giveUp, LISTEN_TIMEOUT_MS);
+    const timer = setTimeout(() => giveUp('IT NEVER STARTED LISTENING'), LISTEN_TIMEOUT_MS);
 
     // A phone sharing a hotspot cannot read its own address off the interface it
     // is serving on, and nobody has to type it anyway — so it says what it is
@@ -202,12 +236,14 @@ function tryDirectHost(opts: HostOptions, ev: LinkEvents): Promise<Link | null> 
         clearTimeout(timer);
         ev.onStatus('waiting');
         resolve({
-          send: (msg) => guest?.send(encode(msg)),
-          info,
-          close: (reason) => {
-            guest?.close(reason);
-            guest = null;
-            handle?.stop();
+          link: {
+            send: (msg) => guest?.send(encode(msg)),
+            info,
+            close: (reason) => {
+              guest?.close(reason);
+              guest = null;
+              handle?.stop();
+            },
           },
         });
       },
@@ -228,12 +264,12 @@ function tryDirectHost(opts: HostOptions, ev: LinkEvents): Promise<Link | null> 
         ev.onStatus('waiting');
       },
       onError: (message) => {
-        // Before it is listening this is just "no direct hosting here"; after,
-        // it is a real fault on a table people are sitting at.
+        // Before it is listening this is why the table could not be opened;
+        // after, it is a real fault on a table people are sitting at.
         if (settled) ev.onStatus('error', message);
         else {
           clearTimeout(timer);
-          giveUp();
+          giveUp(message);
         }
       },
     });
@@ -241,7 +277,9 @@ function tryDirectHost(opts: HostOptions, ev: LinkEvents): Promise<Link | null> 
     if (!handle && !settled) {
       settled = true;
       clearTimeout(timer);
-      resolve(null);
+      // The module answered for itself a moment ago and is gone now — which is
+      // not this build lacking it, so it is not reported as such.
+      resolve({ failure: 'THE SERVER WOULD NOT START' });
     }
   });
 }
@@ -251,12 +289,12 @@ async function host(opts: HostOptions, ev: LinkEvents): Promise<Link> {
 
   // 1. Serve the room from this phone if the platform lets us open a port.
   const direct = await tryDirectHost(opts, ev);
-  if (direct) return direct;
+  if (direct && 'link' in direct) return direct.link;
 
   // On a hotspot there is no third machine to fall back to — the network only
   // exists because this phone is making it, and a relay would have to live on it.
   if (opts.hotspot) {
-    ev.onStatus('error', CANNOT_SHARE);
+    ev.onStatus('error', direct ? cannotListen(direct.failure, opts.port) : CANNOT_SHARE);
     return deadLink;
   }
 
@@ -289,8 +327,20 @@ const noAnswer = (address: string, port: number) =>
 const CANNOT_SHARE =
   'THIS COPY CANNOT SERVE A TABLE — EXPO GO IS NOT ALLOWED TO OPEN A PORT. THE PHONE SHARING THE HOTSPOT NEEDS THE BUILT APP; THE OTHER ONE DOES NOT.';
 
-const noHotspotTable = (tried: string, port: number) =>
-  `NO TABLE ANSWERED ON THE HOTSPOT${tried ? ` AT ${tried}:${port}` : ''} — JOIN THE OTHER PHONE'S HOTSPOT IN WI-FI SETTINGS, AND CHECK IT HAS PRESSED "OPEN THE TABLE"`;
+/**
+ * This build *can* serve a table and this time it could not. Almost always the
+ * port is still held by the table this phone opened before — so say that, rather
+ * than send a player off to build an app they are already running.
+ */
+const cannotListen = (why: string, port: number) =>
+  `THIS PHONE COULD NOT OPEN PORT ${port} TO SERVE THE TABLE — ${why.toUpperCase()}. CLOSE ANY OTHER COPY OF THE GAME, OR GIVE THE LAST TABLE A MOMENT TO LET GO OF THE PORT, AND TRY AGAIN.`;
+
+const noHotspotTable = (tried: string[], port: number) =>
+  `NO TABLE ANSWERED ON THE HOTSPOT${tried.length ? ` — TRIED ${tried.join(', ')} ON PORT ${port}` : ''}. JOIN THE OTHER PHONE'S HOTSPOT IN WI-FI SETTINGS, AND CHECK IT HAS PRESSED "OPEN THE TABLE"`;
+
+const LOOKING = 'LOOKING FOR THE PHONE SHARING THE HOTSPOT';
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
  * Find the phone that is sharing, and sit down at it.
@@ -299,15 +349,32 @@ const noHotspotTable = (tried: string, port: number) =>
  * phone handing out the addresses is at a gateway address the guest can work out
  * from its own. Every candidate is dialled at once and the first that answers
  * with the right room code is the table.
+ *
+ * And if none of them answers, it is asked again. The other phone may simply not
+ * be open yet — the two players are pressing their buttons seconds apart — and a
+ * guest that gave up on the first pass would be sitting on an error while the
+ * table it wants finishes opening a foot away. The candidates are worked out
+ * afresh each time too: a phone that had no address to give a moment ago usually
+ * has one by the next pass.
  */
 async function joinHotspot(opts: JoinOptions, ev: LinkEvents): Promise<Link> {
-  ev.onStatus('connecting', 'LOOKING FOR THE PHONE SHARING THE HOTSPOT');
-
   const typed = opts.address.trim();
-  const targets = typed ? [typed] : hotspotTargets(await localIpAddress());
-  const found = await firstAnswering(targets, opts.port, opts.code);
+  const deadline = Date.now() + HUNT_MS;
+  let tried: string[] = typed ? [typed] : [];
+  let found: Answer | null = null;
+
+  for (let sweep = 1; ; sweep++) {
+    ev.onStatus('connecting', sweep === 1 ? LOOKING : `${LOOKING} (${sweep})`);
+    const targets = typed ? [typed] : hotspotTargets(await localIpAddress(2));
+    if (targets.length) tried = targets;
+
+    found = await firstAnswering(targets, opts.port, opts.code);
+    if (found || Date.now() >= deadline) break;
+    await sleep(BETWEEN_SWEEPS_MS);
+  }
+
   if (!found) {
-    ev.onStatus('error', noHotspotTable(targets[0] ?? '', opts.port));
+    ev.onStatus('error', noHotspotTable(tried, opts.port));
     return deadLink;
   }
 
