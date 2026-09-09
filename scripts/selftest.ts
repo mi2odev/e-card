@@ -637,7 +637,6 @@ async function testHotspot() {
   }
 
   await testHotspotBeforeTheTableOpens();
-  await testHotspotCannotServe();
 }
 
 /**
@@ -707,19 +706,17 @@ async function testHotspotBeforeTheTableOpens() {
   }
 }
 
+/* --------------------------------------------- a table served by the phone */
+
 /**
- * A build that *can* serve a table and this time could not — the port is still
- * held by the last one. Blaming Expo Go there sends a player off to build an app
- * they are already running.
+ * What a built app does that Expo Go cannot: open a port and serve the table
+ * itself, on the Wi-Fi or on a hotspot. The native halves are stood in for, so
+ * the driver runs exactly the code a phone runs.
  */
-async function testHotspotCannotServe() {
+async function testServedByThisPhone() {
+  console.log('\nA table served by the phone itself');
   const nodeNet = await import('node:net');
-  const port = PORT + 14;
 
-  const squatter = nodeNet.createServer(() => {});
-  await new Promise<void>((r) => squatter.listen(port, '0.0.0.0', r));
-
-  // Stand in for the native halves a dev build has and this test process has not.
   const fakeTcp = {
     createServer(handler: (s: unknown) => void) {
       const srv = nodeNet.createServer((sock) => {
@@ -739,27 +736,50 @@ async function testHotspotCannotServe() {
   const shim = (name: string) => {
     if (name === 'react-native-tcp-socket') return fakeTcp;
     if (name === 'react-native') return { NativeModules: { TcpSockets: {} } };
+    if (name === 'expo-network') return { getIpAddressAsync: async () => '192.168.1.34' };
     throw new Error(`no module ${name}`);
   };
-  const hadRequire = 'require' in globalThis;
   (globalThis as { require?: unknown }).require = shim;
 
   try {
     const { wifiDriver, wifiHostsItself } = await import('../src/net/wifi.ts?device=serve');
     check(wifiHostsItself(), 'a build with the native half says it can serve');
 
-    let said = '';
-    await wifiDriver.host(
-      { code: ROOM, address: '', port, hotspot: true },
-      { onStatus: (s, d) => { if (s === 'error') said = d ?? ''; }, onMessage: () => {} },
+    // The screen that opened the table may have asked for this phone's address
+    // before the Wi-Fi had settled, and the other player has to type it in.
+    const openPort = PORT + 15;
+    const served = await wifiDriver.host(
+      { code: ROOM, address: '', port: openPort },
+      { onStatus: () => {}, onMessage: () => {} },
     );
-    check(said.includes(`PORT ${port}`), 'a port it could not open is named', said);
-    check(said.includes('ALREADY IN USE'), 'along with why it could not', said);
-    check(!said.includes('EXPO GO'), 'and Expo Go is not blamed for a build that has the port', said);
+    eq(served.info.mode, 'direct', 'a Wi-Fi table is served by the phone itself');
+    eq(
+      served.info.hint,
+      `192.168.1.34:${openPort}`,
+      'and a host given no address of its own goes and finds one to read out',
+    );
+    served.close();
+    await sleep(100);
+
+    // A port already held — the table this phone opened a minute ago — is not
+    // the same thing as a build that cannot serve at all.
+    const takenPort = PORT + 14;
+    const squatter = nodeNet.createServer(() => {});
+    await new Promise<void>((r) => squatter.listen(takenPort, '0.0.0.0', r));
+    try {
+      let said = '';
+      await wifiDriver.host(
+        { code: ROOM, address: '', port: takenPort, hotspot: true },
+        { onStatus: (s, d) => { if (s === 'error') said = d ?? ''; }, onMessage: () => {} },
+      );
+      check(said.includes(`PORT ${takenPort}`), 'a port it could not open is named', said);
+      check(said.includes('ALREADY IN USE'), 'along with why it could not', said);
+      check(!said.includes('EXPO GO'), 'and Expo Go is not blamed for a build that has the port', said);
+    } finally {
+      squatter.close();
+    }
   } finally {
-    if (hadRequire) (globalThis as { require?: unknown }).require = undefined;
     delete (globalThis as { require?: unknown }).require;
-    squatter.close();
   }
 }
 
@@ -1081,6 +1101,7 @@ await testDirectHost();
 await testRedaction();
 await testOnlineMatch();
 await testHotspot();
+await testServedByThisPhone();
 await testComingBack();
 await testGoneQuiet();
 await testWarmSeat();

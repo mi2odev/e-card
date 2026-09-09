@@ -58,7 +58,9 @@ export default function OnlineScreen() {
 
   useEffect(() => {
     setAddress((a) => a || defaultRelayAddress());
-    void localIpAddress().then(setOwnIp);
+    // Asked with a few goes: a phone that has just come onto the Wi-Fi has no
+    // address to give for a second or two, and this one is read out loud.
+    void localIpAddress(6).then(setOwnIp);
   }, []);
 
   const onHotspot = hotspot;
@@ -337,7 +339,15 @@ export default function OnlineScreen() {
           {needsAddress ? (
             <Appear style={{ marginTop: 18 }} onLayout={form.track('address')}>
               <NameField
-                label={`RELAY ADDRESS · PORT ${DEFAULT_PORT}`}
+                // A guest is not necessarily dialling a relay at all: the other
+                // phone may be serving the table itself, in which case this is
+                // the address that phone is showing. Calling it the relay
+                // address sent players to the wrong machine entirely.
+                label={
+                  role === 'host'
+                    ? `RELAY ADDRESS · PORT ${DEFAULT_PORT}`
+                    : `WHERE THE TABLE IS · PORT ${DEFAULT_PORT}`
+                }
                 value={address}
                 onChangeText={setAddress}
                 placeholder="192.168.1.20"
@@ -349,7 +359,9 @@ export default function OnlineScreen() {
                 keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'default'}
               />
               <Text style={{ fontFamily: F.body, fontSize: 9, letterSpacing: 1.2, color: C.muted7, marginTop: 8, lineHeight: 13 }}>
-                RUN `npm run relay` ON A COMPUTER ON THIS WI-FI AND ENTER THE ADDRESS IT PRINTS. BOTH PHONES USE THE SAME ONE.
+                {role === 'host'
+                  ? 'THE COMPUTER YOU RAN `npm start` ON IS ALREADY RUNNING THE RELAY. ITS ADDRESS IS FILLED IN BELOW IF THIS PHONE COULD WORK IT OUT — BOTH PHONES USE THE SAME ONE.'
+                  : 'IF THE OTHER PHONE IS SERVING THE TABLE ITSELF, THIS IS THE ADDRESS ON ITS SCREEN — READ IT OUT AND TYPE IT HERE. IF A COMPUTER IS RELAYING INSTEAD, IT IS THAT COMPUTER, AND IT IS ALREADY FILLED IN.'}
               </Text>
               {role === 'host' ? (
                 <Text

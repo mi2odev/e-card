@@ -117,7 +117,12 @@ export default function LobbyScreen() {
                   ? `SERVED BY THIS PHONE · ${net.info.hint}`
                   : net.info.mode === 'hotspot'
                     ? net.info.hint
-                    : `VIA RELAY ${net.info.hint}`
+                    : // A guest dials an address and is never told what answered
+                      // — a relay, or the other phone serving the table itself.
+                      // Only the host knows it went looking for a relay.
+                      isHost
+                      ? `VIA RELAY ${net.info.hint}`
+                      : `TABLE AT ${net.info.hint}`
               }
             />
           ) : null}

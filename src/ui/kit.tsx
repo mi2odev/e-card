@@ -1175,7 +1175,10 @@ export function CodeField({
   onChangeText?: (v: string) => void;
   editable?: boolean;
   onFocus?: () => void;
-  style?: ViewStyle;
+  // A text field takes text styles. Typed as a ViewStyle this only compiled
+  // until `expo start` wrote expo-env.d.ts, after which `npm run typecheck`
+  // failed for anyone who had ever run the app.
+  style?: StyleProp<TextStyle>;
 }) {
   const [focus, setFocus] = useState(false);
   return (
