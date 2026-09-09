@@ -84,6 +84,7 @@ read as a glitch — each one is a fade or a slide in the same easing vocabulary
 | A field's border warms to gold over 180 ms when it takes focus | `NameField` in `kit.tsx` | The design specified the two colours; the change between them was a jump |
 | The title's hero folds away while a name is being typed | `app/index.tsx` | See **Deliberate additions** above: it is a keyboard fix that happens to be the nicest one to look at |
 | The title deals itself in — three cards land in turn, then the wordmark, then the terms and the buttons | `app/index.tsx` | The app's opening shot. One timeline sliced into overlapping phases, 1.15 s end to end |
+| Touching a title card lifts it off the pile and drops it back, nudging the other two | `app/index.tsx` | Cards you can pick up read as a deck rather than a picture. The cluster carries 20 px of headroom so the fold-away box cannot clip the lift, taken back off the wordmark's margin so nothing else moves |
 | At the reveal, the winning card lifts and brightens and the losing one sinks and dims | `app/reveal.tsx` | The verdict was only ever in the banner underneath; now it lands on the cards. Runs on the existing `rev` steps, so the design's timings are untouched |
 | Discarded pairs cascade in, 70 ms apart | `app/select.tsx` | They accumulate as a round goes on, and arriving says so |
 | The wager bumps when it is moved | `app/scoreboard.tsx` | The number is the whole panel; it should answer a tap |
