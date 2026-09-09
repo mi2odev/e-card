@@ -8,18 +8,17 @@
  */
 
 import React, { useState } from 'react';
-import { Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View, ViewStyle } from 'react-native';
+import { Image, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { BlurView } from 'expo-blur';
 // Imported by its own path: the package index pulls in every icon font there is,
 // and this app wants four glyphs out of one of them.
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { C, F } from '../theme';
+import { AUTHOR_PORTRAIT } from '../assets';
 import { Appear, BigButton, GoldHairline, GradientText, shadow } from './kit';
 import { tapLight } from '../haptics';
 
 export const AUTHOR = 'MOHAMED MEHDI ZITOUNI';
-/** The initials, for the seal on the button and at the head of the sheet. */
-const MONOGRAM = 'MZ';
 
 type Place = {
   label: string;
@@ -40,33 +39,27 @@ const open = (url: string) => {
   void Linking.openURL(url).catch(() => undefined);
 };
 
-/** The gold seal that stands in for a portrait. */
-function Monogram({ size = 40 }: { size?: number }) {
+/**
+ * The author's picture, in its frame.
+ *
+ * `assets/credits/author.png` is the whole of it — swap that file and both the
+ * button and the sheet change with it, no code involved. Cropped to fill, so any
+ * shape of picture sits properly in either frame.
+ */
+function Portrait({ width, height, radius }: { width: number | `${number}%`; height: number; radius: number }) {
   return (
     <View
       style={{
-        width: size,
-        height: size,
-        borderRadius: size / 2,
+        width,
+        height,
+        borderRadius: radius,
         borderWidth: 1,
         borderColor: C.goldBorder,
-        backgroundColor: 'rgba(212,165,60,0.08)',
-        alignItems: 'center',
-        justifyContent: 'center',
+        backgroundColor: 'rgba(212,165,60,0.06)',
+        overflow: 'hidden',
       }}
     >
-      <Text
-        style={{
-          fontFamily: F.display,
-          fontSize: size * 0.46,
-          lineHeight: size * 0.52,
-          letterSpacing: 1.5,
-          color: C.goldBright,
-          marginLeft: 1.5,
-        }}
-      >
-        {MONOGRAM}
-      </Text>
+      <Image source={AUTHOR_PORTRAIT} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
     </View>
   );
 }
@@ -98,7 +91,7 @@ export function CreditsButton({ style }: { style?: ViewStyle }) {
           style,
         ]}
       >
-        <Monogram />
+        <Portrait width={52} height={40} radius={9} />
         <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
           <Text style={{ fontFamily: F.body, fontSize: 8.5, letterSpacing: 2.2, color: C.muted3 }}>CODED BY</Text>
           <Text numberOfLines={1} style={{ fontFamily: F.bold, fontSize: 11.5, letterSpacing: 1.4, color: C.creamMute }}>
@@ -195,7 +188,7 @@ export function CreditsModal({ visible, onClose }: { visible: boolean; onClose: 
               </View>
 
               <Appear duration={380} from={12} style={{ alignItems: 'center', marginTop: 18 }}>
-                <Monogram size={64} />
+                <Portrait width="100%" height={148} radius={13} />
                 <Text style={{ marginTop: 12, fontFamily: F.body, fontSize: 9, letterSpacing: 3, color: C.muted3 }}>
                   DESIGNED AND CODED BY
                 </Text>
