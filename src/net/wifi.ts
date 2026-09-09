@@ -227,7 +227,10 @@ function tryDirectHost(opts: HostOptions, ev: LinkEvents): Promise<DirectAttempt
     // rather than where it is.
     const info: Link['info'] = opts.hotspot
       ? { mode: 'hotspot', hint: "SERVED BY THIS PHONE'S HOTSPOT" }
-      : { mode: 'direct', hint: `${opts.address || 'this phone'}:${opts.port}` };
+      : {
+          mode: 'direct',
+          hint: opts.address ? `${opts.address}:${opts.port}` : `PORT ${opts.port}`,
+        };
 
     handle = startTcpHost(opts.port, opts.code, {
       onListening: () => {
@@ -287,8 +290,15 @@ function tryDirectHost(opts: HostOptions, ev: LinkEvents): Promise<DirectAttempt
 async function host(opts: HostOptions, ev: LinkEvents): Promise<Link> {
   ev.onStatus('starting');
 
+  // A table this phone serves is reached by an address the other player types
+  // in, so it is worth a moment's asking to have one to read out — the screen
+  // that opened the table may well have asked before the Wi-Fi had settled.
+  // A hotspot host is the exception: the interface it serves on is the one
+  // neither platform will report, and nobody types anything there anyway.
+  const serving = opts.hotspot || opts.address ? opts : { ...opts, address: await localIpAddress(3) };
+
   // 1. Serve the room from this phone if the platform lets us open a port.
-  const direct = await tryDirectHost(opts, ev);
+  const direct = await tryDirectHost(serving, ev);
   if (direct && 'link' in direct) return direct.link;
 
   // On a hotspot there is no third machine to fall back to — the network only
@@ -322,7 +332,7 @@ const noRelay = (address: string, port: number) =>
   `NO RELAY AT ${address}:${port} — RUN "npm run relay" ON THAT COMPUTER, IN A SECOND TERMINAL, AND LEAVE IT OPEN`;
 
 const noAnswer = (address: string, port: number) =>
-  `NOTHING ANSWERED AT ${address}:${port} — CHECK THE ADDRESS, AND THAT BOTH PHONES ARE ON THE SAME WI-FI`;
+  `NOTHING ANSWERED AT ${address}:${port} — CHECK THE ADDRESS, AND THAT BOTH PHONES ARE ON THE SAME WI-FI. OPENING http://${address}:${port} IN THIS PHONE'S BROWSER SAYS WHETHER IT CAN BE REACHED AT ALL.`;
 
 const CANNOT_SHARE =
   'THIS COPY CANNOT SERVE A TABLE — EXPO GO IS NOT ALLOWED TO OPEN A PORT. THE PHONE SHARING THE HOTSPOT NEEDS THE BUILT APP; THE OTHER ONE DOES NOT.';

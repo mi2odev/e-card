@@ -4,15 +4,16 @@
   "main": "expo-router/entry",
   "private": true,
   "scripts": {
-    "start": "expo start",
-    "start:clear": "expo start -c",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "start": "node scripts/dev.mjs start",
+    "start:clear": "node scripts/dev.mjs start -c",
+    "android": "node scripts/dev.mjs start --android",
+    "ios": "node scripts/dev.mjs start --ios",
     "fix": "expo install --fix",
     "doctor": "npx expo-doctor",
     "typecheck": "tsc --noEmit",
     "relay": "node server/relay.js",
-    "selftest": "node --experimental-strip-types --no-warnings --import ./scripts/register.mjs scripts/selftest.ts"
+    "selftest": "node --experimental-strip-types --no-warnings --import ./scripts/register.mjs scripts/selftest.ts",
+    "start:metro": "expo start"
   },
   "dependencies": {
     "@expo-google-fonts/barlow": "*",

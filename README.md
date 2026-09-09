@@ -82,10 +82,14 @@ it was keeping goes with it.
 Both phones must be on the same network. Nothing leaves it and no internet is needed.
 
 Inside **Expo Go** an app cannot open a listening port, so the two phones meet at a tiny
-relay you run on any computer on the same Wi-Fi:
+relay on a computer on the same Wi-Fi. **`npm start` runs it for you**, beside Metro, on
+the machine the phones are already loading the app from — its lines are the dim ones
+marked `relay │`. Nothing to start, and nothing to type: that machine's address is the one
+the app pre-fills.
 
 ```bash
-npm run relay        # prints the address to type into both phones
+npm start            # Metro and the relay together
+npm run relay        # or the relay on its own, on some other machine
 ```
 
 **If a phone says it cannot reach the relay,** open that same address in the phone's
@@ -102,12 +106,19 @@ saying it is running, so:
 
 It has zero dependencies, keeps nothing after a room empties, and is about 250 lines
 (`server/relay.js`). The address field in the app is pre-filled with your Metro host,
-which is usually the same machine — so most of the time neither player types anything
-but the code.
+which is the same machine — so most of the time neither player types anything but the
+code.
 
 In any build that is not Expo Go, `react-native-tcp-socket` is live and the host phone
 serves the room itself — the relay is not needed at all. See **Building it as a real app**
 above. The app detects this and switches automatically; the lobby says which mode you got.
+
+**When a phone is serving, the guest types that phone's address, not the computer's.** The
+phone that opened the table shows it in large type, and the lobby keeps showing it; the
+joining phone's field says *where the table is* rather than *relay address* for exactly
+this reason, since the pre-filled Metro address is the wrong one in that case. A host that
+could not read its own address off the Wi-Fi when the screen first asked goes back and
+asks again, so there is always something to read out.
 
 ### Hotspot — no router, no network to join
 
@@ -249,6 +260,7 @@ src/net/             see below
 src/ui/              kit.tsx (buttons, chips, keypad, rules modal), Terms.tsx, Cards.tsx, Radial.tsx
 src/theme.ts         every colour and font token from the design
 server/relay.js      zero-dependency LAN relay
+scripts/dev.mjs      `npm start` — Metro and the relay together
 scripts/selftest.ts  the checks behind `npm run selftest`
 ```
 
