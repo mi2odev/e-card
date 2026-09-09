@@ -207,10 +207,16 @@ Drop replacements straight over these files — same names, same paths, no code 
 assets/cards/emperor.png     assets/cards/citizen.png
 assets/cards/slave.png       assets/cards/card-back.png
 assets/seals/seal-emperor.png  assets/seals/seal-slave.png
+assets/credits/author.png    ← the picture on the credits
 assets/icon.png  assets/adaptive-icon.png  assets/splash.png
 ```
 
 Card art is drawn at a 3:4 aspect ratio (`resizeMode: cover`) — 900×1200 px is plenty.
+
+`assets/credits/author.png` is whatever you want next to your name: it fills a wide frame
+in the credits sheet and a small one on the button that opens it, cropped to fill from the
+centre in both. Anything landscape and roughly 3:2 lands the same way in both frames — the
+placeholder in the repo is 768×400. Keep whatever matters near the middle.
 
 ## Layout
 

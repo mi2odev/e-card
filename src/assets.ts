@@ -14,3 +14,6 @@ export const SEAL: Record<'emp' | 'slv', ImageSourcePropType> = {
   emp: require('../assets/seals/seal-emperor.png'),
   slv: require('../assets/seals/seal-slave.png'),
 };
+
+/** The picture on the credits — the same rule: drop your own straight over it. */
+export const AUTHOR_PORTRAIT: ImageSourcePropType = require('../assets/credits/author.png');
