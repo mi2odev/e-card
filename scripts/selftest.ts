@@ -37,6 +37,10 @@ const eq = (a: unknown, b: unknown, label: string) =>
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** Everything a notice has to say, flattened, so a check can look through it. */
+const said = (n: { say: string; fix?: string; tech?: string } | null | undefined) =>
+  !n ? '' : [n.say, n.fix, n.tech].filter(Boolean).join(' · ');
+
 /** Wait for a condition the network is expected to satisfy shortly. */
 async function until(cond: () => boolean, label: string, ms = 4000) {
   const deadline = Date.now() + ms;
@@ -716,9 +720,9 @@ async function testHotspotCannotShare() {
       attempt: net().attempt,
     });
     check(
-      net().detail.includes('DOWNLOADED'),
+      said(net().notice).includes('downloaded app'),
       'telling a downloaded app what it means there, not only what Expo Go means',
-      net().detail,
+      said(net().notice),
     );
   } finally {
     G.session.stopSession();
@@ -854,14 +858,16 @@ async function testServedByThisPhone() {
     const squatter = nodeNet.createServer(() => {});
     await new Promise<void>((r) => squatter.listen(takenPort, '0.0.0.0', r));
     try {
-      let said = '';
+      let told: { say: string; fix?: string; tech?: string } | null = null;
       await wifiDriver.host(
         { code: ROOM, address: '', port: takenPort, hotspot: true },
-        { onStatus: (s, d) => { if (s === 'error') said = d ?? ''; }, onMessage: () => {} },
+        { onStatus: (st, n) => { if (st === 'error') told = n ?? null; }, onMessage: () => {} },
       );
-      check(said.includes(`PORT ${takenPort}`), 'a port it could not open is named', said);
-      check(said.includes('ALREADY IN USE'), 'along with why it could not', said);
-      check(!said.includes('EXPO GO'), 'and Expo Go is not blamed for a build that has the port', said);
+      const words = said(told);
+      check(words.includes(`port ${takenPort}`), 'a port it could not open is named', words);
+      check(words.toLowerCase().includes('already in use'), 'along with why it could not', words);
+      check(!words.includes('Expo Go'), 'and Expo Go is not blamed for a build that has the port', words);
+      check(!!told && !!(told as { tech?: string }).tech, 'with the machine words kept out of the way', words);
     } finally {
       squatter.close();
     }
@@ -947,7 +953,7 @@ async function testComingBack() {
     B.actions.netAdvance();
     await until(() => guest().turn === 2 || guest().game === 2, 'the match moves on');
 
-    B.session.stopSession('THE OTHER PLAYER LEFT THE TABLE');
+    B.session.stopSession('The other player left the table.');
     await sleep(200);
     eq(guest().netRole, 'off', 'the guest is off the table');
     eq(guestNet().resume?.code, ROOM, 'but the table it left is remembered');
@@ -967,9 +973,13 @@ async function testComingBack() {
     /* ------------------------------------- the phone holding the table walks off */
 
     console.log('\nWhen the other phone closes the table');
-    A.session.stopSession('THE OTHER PLAYER LEFT THE TABLE');
+    A.session.stopSession('The other player left the table.');
     await until(() => guestNet().status === 'closed', 'the guest is told the table closed');
-    eq(guestNet().detail, 'THE OTHER PLAYER LEFT THE TABLE', 'in so many words');
+    check(
+      said(guestNet().notice).includes('The other player left the table.'),
+      'in so many words',
+      said(guestNet().notice),
+    );
     eq(guestNet().retrying, false, 'and does not sit there dialling a table nobody is holding');
     eq(hostNet().resume?.code, ROOM, 'the host keeps the table to come back to');
 
@@ -1029,9 +1039,9 @@ async function testGoneQuiet() {
 
     await until(() => !hostNet().peerHere, 'a phone that stops answering is noticed', 25000);
     check(
-      hostNet().detail.includes('GONE QUIET'),
+      said(hostNet().notice).includes('GONE QUIET'),
       'and is described as quiet rather than gone',
-      hostNet().detail,
+      said(hostNet().notice),
     );
     eq(hostNet().status, 'connected', 'but the table is not thrown away over it');
 
@@ -1137,13 +1147,13 @@ async function testUnreachable() {
       name: 'Challenger',
     });
     await until(
-      () => W.net.useNet.getState().detail.includes('NO TABLE OPEN ON CODE Q8A2'),
+      () => said(W.net.useNet.getState().notice).includes('NO TABLE ON CODE Q8A2'),
       'a code nobody is hosting is called out by name',
     );
     check(
-      !W.net.useNet.getState().detail.includes('LEFT THE TABLE'),
+      !said(W.net.useNet.getState().notice).includes('LEFT'),
       'and is not mistaken for a phone leaving',
-      W.net.useNet.getState().detail,
+      said(W.net.useNet.getState().notice),
     );
     W.session.stopSession();
   } finally {
@@ -1167,9 +1177,9 @@ async function testUnreachable() {
   // other player is a few seconds behind — so it is tried again rather than
   // written off, and the diagnosis stays on screen while it is.
   await until(() => E.net.useNet.getState().retrying, 'a dial that lands nowhere is tried again, not written off');
-  const trying = E.net.useNet.getState().detail;
+  const trying = said(E.net.useNet.getState().notice);
   check(trying.includes(`127.0.0.1:${PORT + 3}`), 'naming the address it could not reach while it tries', trying);
-  check(trying.includes('TRYING AGAIN'), 'and saying that is what it is doing', trying);
+  check(E.net.useNet.getState().attempt > 0, 'and counting which go it is on', E.net.useNet.getState().attempt);
   check(
     !trying.includes('LEFT THE TABLE'),
     'never blaming a phone that was never connected',
@@ -1182,10 +1192,67 @@ async function testUnreachable() {
     'and gives up in the end rather than dialling for ever',
     40_000,
   );
-  const detail = E.net.useNet.getState().detail;
+  const detail = said(E.net.useNet.getState().notice);
   check(detail.includes(`127.0.0.1:${PORT + 3}`), 'still naming the address it could not reach', detail);
-  check(detail.includes('SAME WI-FI'), 'and what to check about it', detail);
+  check(detail.includes('same Wi-Fi'), 'and what to check about it', detail);
   E.session.stopSession();
+}
+
+/* --------------------------------------------------- how it reads out loud */
+
+/**
+ * The copy deck, checked as copy.
+ *
+ * Every one of these used to be a single all-caps sentence on a 10 px status
+ * line, IP address and native error included. Now a notice is a headline short
+ * enough for a banner, an explanation set as prose, and the machine's own words
+ * folded away — and nothing is stopping the next one from sliding back into a
+ * paragraph of shouting except this.
+ */
+async function testHowItReads() {
+  console.log('\nHow it reads');
+  const { NOTICE, lookingForHotspot } = await import('../src/net/notice.ts');
+
+  const every = [
+    NOTICE.nothingAnswered('192.168.1.34', 8787),
+    NOTICE.noRelay('192.168.1.20', 8787),
+    NOTICE.noHotspotTable(['172.20.10.1', '192.168.43.1'], 8787),
+    NOTICE.cannotServe(),
+    NOTICE.portTaken('listen EADDRINUSE: address already in use 0.0.0.0:8787', 8787),
+    NOTICE.servingFailed('socket closed'),
+    NOTICE.needsRelayAddress(),
+    NOTICE.noSuchTable('K7QM'),
+    NOTICE.notBackYet('K7QM'),
+    NOTICE.versionMismatch(),
+    NOTICE.linkDropped(),
+    NOTICE.stillTrying(),
+    NOTICE.gaveUp(),
+    NOTICE.goneQuiet(),
+    NOTICE.challengerLeft(),
+    NOTICE.tableClosed('The other player left the table.'),
+    NOTICE.tableClosed(''),
+    NOTICE.unexpected('Network request failed'),
+    lookingForHotspot(1),
+    lookingForHotspot(4),
+  ];
+
+  const tooLong = every.filter((n) => n.say.length > 34).map((n) => n.say);
+  check(tooLong.length === 0, 'every headline fits the one line a banner has', tooLong);
+
+  const shouting = every.filter((n) => n.fix && n.fix === n.fix.toUpperCase()).map((n) => n.say);
+  check(shouting.length === 0, 'and the explanations are set to be read, not shouted', shouting);
+
+  const unpunctuated = every.filter((n) => n.fix && !/[.!?]$/.test(n.fix.trim())).map((n) => n.say);
+  check(unpunctuated.length === 0, 'written as sentences, and finished as sentences', unpunctuated);
+
+  const broken = every
+    .filter((n) => /undefined|NaN|\[object/.test(`${n.say}${n.fix ?? ''}${n.tech ?? ''}`))
+    .map((n) => n.say);
+  check(broken.length === 0, 'with nothing left half-filled-in', broken);
+
+  // An address or a native error is true and no help; it belongs behind the tap.
+  const leaked = every.filter((n) => /EADDRINUSE|\d+\.\d+\.\d+\.\d+/.test(`${n.say} ${n.fix ?? ''}`)).map((n) => n.say);
+  check(leaked.length === 0, 'and the machine\'s own words kept to the details', leaked);
 }
 
 /* ------------------------------------------- whoever presses first waits */
@@ -1220,9 +1287,9 @@ async function testPressingFirst() {
     });
     await until(() => G.net.useNet.getState().retrying, 'a guest that is early keeps dialling');
     check(
-      G.net.useNet.getState().detail.includes(`127.0.0.1:${port}`),
+      said(G.net.useNet.getState().notice).includes(`127.0.0.1:${port}`),
       'and still says which address it cannot reach',
-      G.net.useNet.getState().detail,
+      said(G.net.useNet.getState().notice),
     );
 
     // The other player catches up.
@@ -1265,6 +1332,7 @@ await testOnlineMatch();
 await testHotspot();
 await testServedByThisPhone();
 await testPressingFirst();
+await testHowItReads();
 await testComingBack();
 await testGoneQuiet();
 await testWarmSeat();

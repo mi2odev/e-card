@@ -19,6 +19,7 @@ import { useNet } from '../store/useNet';
 import { seatSide, applySnapshot, makeSnapshot, snapshotKey, type Snapshot } from './snapshot';
 import { DEFAULT_PORT, type Intent, type LinkStatus, type NetMessage, PROTOCOL_VERSION } from './protocol';
 import type { Link, TransportDriver, TransportKind } from './link';
+import { NOTICE, type Notice } from './notice';
 import { wifiDriver } from './wifi';
 
 export const DRIVERS: Record<TransportKind, TransportDriver> = {
@@ -55,13 +56,7 @@ const MAX_FIRST_TRIES = 6;
 const HEARTBEAT_MS = 4000;
 const SILENT_MS = 12_000;
 
-const SAY = {
-  dropped: 'THE LINK DROPPED — TAKING THE SEAT AGAIN',
-  notYet: 'NOTHING ANSWERED YET',
-  quiet: 'THE OTHER PHONE HAS GONE QUIET',
-  gaveUp: 'COULD NOT GET BACK TO THE TABLE — TRY AGAIN?',
-  guestLeft: 'THE CHALLENGER LEFT THE TABLE — THE SEAT IS OPEN AGAIN',
-};
+
 
 let link: Link | null = null;
 let unsubscribeStore: (() => void) | null = null;
@@ -163,7 +158,7 @@ function onMessage(role: 'host' | 'guest', msg: NetMessage): void {
   lastHeard = Date.now();
   if (saidQuiet) {
     saidQuiet = false;
-    net.patch({ peerHere: true, detail: '' });
+    net.patch({ peerHere: true, notice: null });
   }
 
   switch (msg.t) {
@@ -176,9 +171,7 @@ function onMessage(role: 'host' | 'guest', msg: NetMessage): void {
         net.patch({
           status: 'waiting',
           retrying: false,
-          detail: everPaired
-            ? `THE OTHER PHONE IS NOT BACK AT CODE ${net.code} YET — THIS SEAT IS HELD`
-            : `NO TABLE OPEN ON CODE ${net.code} — CHECK THE FOUR CHARACTERS, AND THAT THE OTHER PHONE HAS PRESSED "OPEN THE TABLE"`,
+          notice: everPaired ? NOTICE.notBackYet(net.code) : NOTICE.noSuchTable(net.code),
         });
         break;
       }
@@ -188,7 +181,7 @@ function onMessage(role: 'host' | 'guest', msg: NetMessage): void {
         peerLeftForGood = false;
         expectPeer = true;
         retries = 0;
-        net.patch({ peerHere: true, status: 'connected', detail: '', retrying: false, attempt: 0 });
+        net.patch({ peerHere: true, status: 'connected', notice: null, retrying: false, attempt: 0 });
         // Both ends announce themselves; whoever is already up answers.
         if (role === 'host') link?.send({ t: 'welcome', v: PROTOCOL_VERSION, name: useGame.getState().p1 });
         else sayHello();
@@ -207,7 +200,7 @@ function onMessage(role: 'host' | 'guest', msg: NetMessage): void {
     case 'hello':
       if (role !== 'host') break;
       if (msg.v !== PROTOCOL_VERSION) {
-        net.patch({ status: 'error', detail: 'THE OTHER PHONE IS RUNNING A DIFFERENT VERSION' });
+        net.patch({ status: 'error', notice: NOTICE.versionMismatch() });
         break;
       }
       // Whoever this is has the code, and a returning guest looks exactly like a
@@ -224,13 +217,13 @@ function onMessage(role: 'host' | 'guest', msg: NetMessage): void {
     case 'welcome':
       if (role !== 'guest') break;
       if (msg.v !== PROTOCOL_VERSION) {
-        net.patch({ status: 'error', detail: 'THE OTHER PHONE IS RUNNING A DIFFERENT VERSION' });
+        net.patch({ status: 'error', notice: NOTICE.versionMismatch() });
         break;
       }
       peerLeftForGood = false;
       everPaired = true;
       expectPeer = true;
-      net.patch({ peerName: msg.name, peerHere: true, status: 'connected', detail: '', retrying: false, attempt: 0 });
+      net.patch({ peerName: msg.name, peerHere: true, status: 'connected', notice: null, retrying: false, attempt: 0 });
       useGame.setState({ p1: msg.name });
       break;
 
@@ -253,8 +246,8 @@ function onMessage(role: 'host' | 'guest', msg: NetMessage): void {
       // which is also how the same one gets back in.
       peerLeftForGood = true;
       expectPeer = false;
-      if (role === 'host') net.patch({ status: 'waiting', detail: SAY.guestLeft, peerHere: false, peerName: '' });
-      else net.patch({ status: 'closed', detail: msg.reason, peerHere: false });
+      if (role === 'host') net.patch({ status: 'waiting', notice: NOTICE.challengerLeft(), peerHere: false, peerName: '' });
+      else net.patch({ status: 'closed', notice: NOTICE.tableClosed(msg.reason), peerHere: false });
       break;
 
     case 'pong':
@@ -262,12 +255,12 @@ function onMessage(role: 'host' | 'guest', msg: NetMessage): void {
   }
 }
 
-function onStatus(role: 'host' | 'guest', status: LinkStatus, detail?: string, fatal?: boolean): void {
+function onStatus(role: 'host' | 'guest', status: LinkStatus, notice?: Notice, fatal?: boolean): void {
   if (leaving) return;
 
   // A redial reports its own progress — 'starting', then 'connecting' — and none
   // of that should push aside the line telling the player what is going on.
-  if (!detail && (status === 'starting' || status === 'connecting') && useNet.getState().retrying) {
+  if (!notice && (status === 'starting' || status === 'connecting') && useNet.getState().retrying) {
     useNet.getState().patch({ status });
     return;
   }
@@ -277,13 +270,13 @@ function onStatus(role: 'host' | 'guest', status: LinkStatus, detail?: string, f
   if (status === 'connected' || status === 'waiting') {
     everWorked = true;
     retries = 0;
-    useNet.getState().patch({ status, detail: detail ?? '', retrying: false, attempt: 0 });
+    useNet.getState().patch({ status, notice: notice ?? null, retrying: false, attempt: 0 });
     if (role === 'guest' && status === 'connected') sayHello();
     return;
   }
 
   if ((status === 'closed' || status === 'error') && !fatal && canRedial()) {
-    linkLost(detail);
+    linkLost(notice);
     return;
   }
 
@@ -291,11 +284,11 @@ function onStatus(role: 'host' | 'guest', status: LinkStatus, detail?: string, f
   // was being done about it is not being done any more, and the banner must not
   // go on saying otherwise.
   if (status === 'closed' || status === 'error') {
-    useNet.getState().patch({ status, detail: detail ?? '', retrying: false, attempt: 0 });
+    useNet.getState().patch({ status, notice: notice ?? null, retrying: false, attempt: 0 });
     return;
   }
 
-  useNet.getState().patch({ status, detail: detail ?? '' });
+  useNet.getState().patch({ status, notice: notice ?? null });
 }
 
 /** The guest introduces itself the moment the pipe is usable, exactly once. */
@@ -315,7 +308,7 @@ const canRedial = () => !!table && !leaving && !peerLeftForGood && retries < tri
  * The link is gone. Drop it, keep the match, and start dialling — or, if there
  * is nothing left worth dialling, say so and leave the seat where it is.
  */
-function linkLost(detail?: string): void {
+function linkLost(notice?: Notice): void {
   if (!table || leaving) return;
 
   stopHeartbeat();
@@ -336,7 +329,7 @@ function linkLost(detail?: string): void {
     const spent = retries >= triesAllowed();
     useNet.getState().patch({
       status: everWorked ? 'closed' : 'error',
-      detail: everWorked ? (spent ? SAY.gaveUp : detail || SAY.gaveUp) : detail || SAY.notYet,
+      notice: everWorked ? (spent ? NOTICE.gaveUp() : (notice ?? NOTICE.gaveUp())) : (notice ?? NOTICE.stillTrying()),
       retrying: false,
     });
     return;
@@ -348,11 +341,10 @@ function linkLost(detail?: string): void {
     status: 'connecting',
     // A link that dropped is being picked back up, and saying so is the point.
     // One that never landed has a diagnosis worth keeping in front of the
-    // player — the address it could not reach — so that is kept, and only the
-    // count is added to it.
-    detail: everWorked
-      ? `${SAY.dropped} (${retries})`
-      : `${detail || SAY.notYet} — TRYING AGAIN (${retries})`,
+    // player — the address it could not reach — so that is what stands. Which
+    // go this is rides in `attempt`, where the screen can set it properly
+    // rather than have it spliced onto the end of a sentence.
+    notice: everWorked ? NOTICE.linkDropped() : (notice ?? NOTICE.stillTrying()),
     retrying: true,
     attempt: retries,
   });
@@ -366,7 +358,7 @@ async function redial(): Promise<void> {
   try {
     await openLink(table);
   } catch (e) {
-    linkLost(String((e as { message?: string })?.message ?? e).toUpperCase());
+    linkLost(NOTICE.unexpected(String((e as { message?: string })?.message ?? e)));
   }
 }
 
@@ -401,7 +393,7 @@ function startHeartbeat(): void {
       // really dead will say so itself and be redialled; a phone that was only
       // asleep answers the next ping and is simply back.
       saidQuiet = true;
-      useNet.getState().patch({ peerHere: false, detail: SAY.quiet });
+      useNet.getState().patch({ peerHere: false, notice: NOTICE.goneQuiet() });
     }
     link.send({ t: 'ping', ts: Date.now() });
   }, HEARTBEAT_MS);
@@ -440,8 +432,8 @@ async function openLink(opts: StartOptions): Promise<void> {
     stillWanted: wanted,
   };
   const events = {
-    onStatus: (status: LinkStatus, detail?: string, fatal?: boolean) => {
-      if (wanted()) onStatus(opts.role, status, detail, fatal);
+    onStatus: (status: LinkStatus, notice?: Notice, fatal?: boolean) => {
+      if (wanted()) onStatus(opts.role, status, notice, fatal);
     },
     onMessage: (m: NetMessage) => {
       if (wanted()) onMessage(opts.role, m);
@@ -491,7 +483,7 @@ export async function startSession(opts: StartOptions): Promise<void> {
     peerName: '',
     peerHere: false,
     status: 'starting',
-    detail: '',
+    notice: null,
     info: null,
     retrying: false,
     attempt: 0,

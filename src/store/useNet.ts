@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { LinkInfo, TransportKind } from '../net/link';
 import type { LinkStatus } from '../net/protocol';
+import type { Notice } from '../net/notice';
 
 /** Enough about the table this phone left to offer the seat back. */
 export type ResumeInfo = {
@@ -17,8 +18,8 @@ export type NetUiState = {
   role: 'host' | 'guest';
   kind: TransportKind;
   status: LinkStatus;
-  /** Human-readable reason for the current status, when there is one. */
-  detail: string;
+  /** What to tell the player about the current status, when there is anything. */
+  notice: Notice | null;
   code: string;
   address: string;
   port: number;
@@ -45,7 +46,7 @@ const initial: NetUiState = {
   role: 'host',
   kind: 'wifi',
   status: 'idle',
-  detail: '',
+  notice: null,
   code: '',
   address: '',
   port: 8787,

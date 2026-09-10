@@ -23,6 +23,7 @@ import { deadLink, type HostOptions, type JoinOptions, type Link, type LinkEvent
 import { errorText, startTcpHost, tcpHostAvailable, type TcpHostHandle } from './ws/tcpHost';
 import type { Connection } from './ws/hostServer';
 import { hotspotTargets, localIpAddress } from './discover';
+import { NOTICE, lookingForHotspot, type Notice } from './notice';
 
 const url = (address: string, port: number, code: string, role: 'host' | 'guest') =>
   `ws://${address}:${port}/?room=${encodeURIComponent(code)}&role=${role}`;
@@ -32,7 +33,7 @@ function socketLink(
   opened: WebSocket,
   ev: LinkEvents,
   info: Link['info'],
-  unreachable: string,
+  unreachable: Notice,
   // A socket that never opened was never a table. Saying "the other phone left"
   // in that case sends people hunting for the wrong problem entirely.
   everOpen: boolean,
@@ -89,14 +90,14 @@ function clientLink(
   target: string,
   ev: LinkEvents,
   info: Link['info'],
-  unreachable: string,
+  unreachable: Notice,
   onOpen?: () => void,
 ): Link {
   let socket: WebSocket;
   try {
     socket = new WebSocket(target);
   } catch (e) {
-    ev.onStatus('error', errorText(e));
+    ev.onStatus('error', NOTICE.unexpected(errorText(e)));
     return deadLink;
   }
   return socketLink(socket, ev, info, unreachable, false, onOpen);
@@ -281,7 +282,7 @@ function tryDirectHost(opts: HostOptions, ev: LinkEvents): Promise<DirectAttempt
       onError: (message) => {
         // Before it is listening this is why the table could not be opened;
         // after, it is a real fault on a table people are sitting at.
-        if (settled) ev.onStatus('error', message);
+        if (settled) ev.onStatus('error', NOTICE.servingFailed(message));
         else {
           clearTimeout(timer);
           giveUp(message);
@@ -316,17 +317,13 @@ async function host(opts: HostOptions, ev: LinkEvents): Promise<Link> {
   // On a hotspot there is no third machine to fall back to — the network only
   // exists because this phone is making it, and a relay would have to live on it.
   if (opts.hotspot) {
-    ev.onStatus('error', direct ? cannotListen(direct.failure, opts.port) : CANNOT_SHARE, true);
+    ev.onStatus('error', direct ? NOTICE.portTaken(direct.failure, opts.port) : NOTICE.cannotServe(), true);
     return deadLink;
   }
 
   // 2. Otherwise both phones meet at the relay.
   if (!opts.address) {
-    ev.onStatus(
-      'error',
-      'THIS COPY CANNOT HOST BY ITSELF — ENTER THE ADDRESS OF A COMPUTER RUNNING THE RELAY',
-      true,
-    );
+    ev.onStatus('error', NOTICE.needsRelayAddress(), true);
     return deadLink;
   }
   ev.onStatus('connecting');
@@ -334,45 +331,10 @@ async function host(opts: HostOptions, ev: LinkEvents): Promise<Link> {
     url(opts.address, opts.port, opts.code, 'host'),
     ev,
     { mode: 'relay', hint: `${opts.address}:${opts.port}` },
-    noRelay(opts.address, opts.port),
+    NOTICE.noRelay(opts.address, opts.port),
     () => ev.onStatus('waiting'),
   );
 }
-
-/**
- * Said when the dial never lands. The host in relay mode knows it was reaching
- * for a relay; a guest may have been given either a relay or a host phone, so it
- * is told what to check rather than what to run.
- */
-const noRelay = (address: string, port: number) =>
-  `NO RELAY AT ${address}:${port} — RUN "npm run relay" ON THAT COMPUTER, IN A SECOND TERMINAL, AND LEAVE IT OPEN`;
-
-const noAnswer = (address: string, port: number) =>
-  `NOTHING ANSWERED AT ${address}:${port} — CHECK THE ADDRESS, AND THAT BOTH PHONES ARE ON THE SAME WI-FI. OPENING http://${address}:${port} IN THIS PHONE'S BROWSER SAYS WHETHER IT CAN BE REACHED AT ALL.`;
-
-/**
- * Said when there is no in-app server in this copy at all.
- *
- * Expo Go is the usual reason and used to be the only one named — which reads
- * as nonsense on a phone that downloaded the app, and sends the player off to
- * build something they are already running. So it says what is true either way
- * first, and what to do about it second.
- */
-const CANNOT_SHARE =
-  'THIS COPY CANNOT SERVE A TABLE — IT HAS NO WAY TO OPEN A PORT. THAT IS NORMAL IN EXPO GO, WHICH IS NOT ALLOWED ONE; IN A DOWNLOADED APP IT MEANS THE BUILD WENT OUT WITHOUT THE PART THAT DOES IT. THE PHONE SHARING THE HOTSPOT NEEDS A BUILD THAT HAS IT; THE OTHER ONE DOES NOT.';
-
-/**
- * This build *can* serve a table and this time it could not. Almost always the
- * port is still held by the table this phone opened before — so say that, rather
- * than send a player off to build an app they are already running.
- */
-const cannotListen = (why: string, port: number) =>
-  `THIS PHONE COULD NOT OPEN PORT ${port} TO SERVE THE TABLE — ${why.toUpperCase()}. CLOSE ANY OTHER COPY OF THE GAME, OR GIVE THE LAST TABLE A MOMENT TO LET GO OF THE PORT, AND TRY AGAIN.`;
-
-const noHotspotTable = (tried: string[], port: number) =>
-  `NO TABLE ANSWERED ON THE HOTSPOT${tried.length ? ` — TRIED ${tried.join(', ')} ON PORT ${port}` : ''}. JOIN THE OTHER PHONE'S HOTSPOT IN WI-FI SETTINGS, AND CHECK IT HAS PRESSED "OPEN THE TABLE"`;
-
-const LOOKING = 'LOOKING FOR THE PHONE SHARING THE HOTSPOT';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -400,7 +362,7 @@ async function joinHotspot(opts: JoinOptions, ev: LinkEvents): Promise<Link> {
   const wanted = () => opts.stillWanted?.() !== false;
 
   for (let sweep = 1; wanted(); sweep++) {
-    ev.onStatus('connecting', sweep === 1 ? LOOKING : `${LOOKING} (${sweep})`);
+    ev.onStatus('connecting', lookingForHotspot(sweep));
     const targets = typed ? [typed] : hotspotTargets(await localIpAddress(2));
     if (targets.length) tried = targets;
 
@@ -421,7 +383,7 @@ async function joinHotspot(opts: JoinOptions, ev: LinkEvents): Promise<Link> {
 
   if (!found) {
     // Nobody to tell, if the search was abandoned rather than spent.
-    if (wanted()) ev.onStatus('error', noHotspotTable(tried, opts.port));
+    if (wanted()) ev.onStatus('error', NOTICE.noHotspotTable(tried, opts.port));
     return deadLink;
   }
 
@@ -429,7 +391,7 @@ async function joinHotspot(opts: JoinOptions, ev: LinkEvents): Promise<Link> {
     found.socket,
     ev,
     { mode: 'hotspot', hint: `FOUND ON THE HOTSPOT AT ${found.address}` },
-    noAnswer(found.address, opts.port),
+    NOTICE.nothingAnswered(found.address, opts.port),
     true,
   );
   ev.onStatus('connected');
@@ -443,7 +405,7 @@ async function join(opts: JoinOptions, ev: LinkEvents): Promise<Link> {
     url(opts.address, opts.port, opts.code, 'guest'),
     ev,
     { mode: 'relay', hint: `${opts.address}:${opts.port}` },
-    noAnswer(opts.address, opts.port),
+    NOTICE.nothingAnswered(opts.address, opts.port),
     () => ev.onStatus('connected'),
   );
 }
