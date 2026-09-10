@@ -30,6 +30,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { C, F, GOLD_TEXT_GRADIENT, GOLD_TEXT_LOCATIONS } from '../theme';
+import type { Notice } from '../net/notice';
 import { CARD_ART } from '../assets';
 import { Radial } from './Radial';
 import { tapLight } from '../haptics';
@@ -1158,6 +1159,140 @@ export function StatusLine({ text, tone = 'gold', style }: { text: string; tone?
     <View style={[{ flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'center' }, style]}>
       <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: color }} />
       <Text style={{ fontFamily: F.bold, fontSize: 10, letterSpacing: 2, color, flexShrink: 1 }}>{text}</Text>
+    </View>
+  );
+}
+
+/* ------------------------------------------------------------------- prose */
+
+/**
+ * A sentence or two of explanation, set to be read.
+ *
+ * The design shouts, and rightly: labels, buttons, status words and the wager
+ * are all caps, wide-tracked, and they are all short. The screens that came
+ * after it — two phones, the hotspot instructions, anything gone wrong — needed
+ * whole paragraphs, and took the caps along with them out of politeness to the
+ * house style. Forty words in spaced capitals is a wall nobody reads.
+ *
+ * So prose is prose: Barlow, sentence case, ordinary tracking, and a line
+ * height that carries it. The voice is the same, the volume is not.
+ */
+export function Prose({
+  children,
+  tone = 'plain',
+  style,
+}: {
+  children: React.ReactNode;
+  /** `quiet` for asides, `warn` for the things that are going wrong. */
+  tone?: 'plain' | 'quiet' | 'warn';
+  style?: StyleProp<TextStyle>;
+}) {
+  const color = tone === 'warn' ? C.rustText : tone === 'quiet' ? C.muted3 : C.creamMute;
+  return (
+    <Text style={[{ fontFamily: F.body, fontSize: 11.5, lineHeight: 17, letterSpacing: 0.2, color }, style]}>
+      {children}
+    </Text>
+  );
+}
+
+/* ---------------------------------------------------------------- notices */
+
+/**
+ * What the app has to say when it has more than a word to say it in.
+ *
+ * A headline in the game's own voice, the explanation set as prose beneath it,
+ * and the machine's own words folded away until somebody asks. Everything used
+ * to arrive as one all-caps sentence on the status line — technically the whole
+ * story, and shaped so that nobody would read it.
+ */
+export function NoticeBoard({
+  notice,
+  tone = 'rust',
+  attempt = 0,
+  style,
+}: {
+  notice: Notice;
+  tone?: 'rust' | 'gold' | 'dim';
+  /** Which go at reconnecting this is, when one is in progress. */
+  attempt?: number;
+  style?: StyleProp<ViewStyle>;
+}) {
+  const [open, setOpen] = useState(false);
+  const head = tone === 'rust' ? C.rustText : tone === 'dim' ? C.muted2 : C.goldSoft;
+  const edge = tone === 'rust' ? C.rustBorder : C.hairline;
+
+  return (
+    <View
+      style={[
+        {
+          alignSelf: 'stretch',
+          borderRadius: 14,
+          borderWidth: 1,
+          borderColor: edge,
+          backgroundColor: 'rgba(0,0,0,0.34)',
+          paddingVertical: 13,
+          paddingHorizontal: 15,
+        },
+        style,
+      ]}
+    >
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: head }} />
+        <Text style={{ fontFamily: F.bold, fontSize: 10.5, letterSpacing: 2.2, color: head, flexShrink: 1 }}>
+          {notice.say}
+        </Text>
+        {attempt > 0 ? (
+          <Text style={{ fontFamily: F.semi, fontSize: 9, letterSpacing: 1.6, color: C.muted7 }}>
+            {`· TRY ${attempt}`}
+          </Text>
+        ) : null}
+      </View>
+
+      {notice.fix ? (
+        // Prose, in body type and sentence case. This is the part with something
+        // to teach, and the only part set to be read rather than glanced at.
+        <Text
+          style={{
+            fontFamily: F.body,
+            fontSize: 11.5,
+            lineHeight: 17,
+            letterSpacing: 0.2,
+            color: C.creamMute,
+            marginTop: 7,
+          }}
+        >
+          {notice.fix}
+        </Text>
+      ) : null}
+
+      {notice.tech ? (
+        <>
+          <Pressable
+            onPress={() => setOpen((v) => !v)}
+            hitSlop={8}
+            style={({ pressed }) => ({ marginTop: 10, opacity: pressed ? 0.6 : 1 })}
+          >
+            <Text style={{ fontFamily: F.semi, fontSize: 9, letterSpacing: 2, color: C.muted7 }}>
+              {open ? 'HIDE DETAILS' : 'DETAILS'}
+            </Text>
+          </Pressable>
+          {open ? (
+            <Text
+              selectable
+              style={{
+                fontFamily: F.body,
+                fontSize: 10.5,
+                lineHeight: 15,
+                letterSpacing: 0.2,
+                color: C.muted5,
+                marginTop: 6,
+              }}
+            >
+              {notice.tech}
+            </Text>
+          ) : null}
+        </>
+      ) : null}
     </View>
   );
 }

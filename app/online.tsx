@@ -10,7 +10,8 @@ import {
   HelpButton,
   NameField,
   Segmented,
-  StatusLine,
+  NoticeBoard,
+  Prose,
   shadow,
   useFieldScroller,
   useKeyboard,
@@ -22,6 +23,7 @@ import { forgetParkedTable, resumeSession, startSession } from '../src/net/sessi
 import { wifiHostsItself } from '../src/net/wifi';
 import { defaultRelayAddress, localIpAddress } from '../src/net/discover';
 import { DEFAULT_PORT, isCompleteRoomCode, makeRoomCode, normalizeRoomCode } from '../src/net/protocol';
+import { NOTICE, type Notice } from '../src/net/notice';
 import { tapLight } from '../src/haptics';
 
 type Role = 'host' | 'guest';
@@ -41,7 +43,7 @@ export default function OnlineScreen() {
   const [hotspot, setHotspot] = useState(false);
   const [code, setCode] = useState(() => makeRoomCode());
   const [address, setAddress] = useState('');
-  const [error, setError] = useState('');
+  const [error, setError] = useState<Notice | null>(null);
   const [busy, setBusy] = useState(false);
   const [ownIp, setOwnIp] = useState('');
   /** Whether the asking is over, so "still looking" can stop being the answer. */
@@ -99,15 +101,15 @@ export default function OnlineScreen() {
    */
   const waitAtTheTable = (start: Promise<void>) => {
     setBusy(true);
-    setError('');
+    setError(null);
     router.replace('/lobby');
     start
       .catch((e) => {
         // Drivers report their own failures through the link status; this is for
         // the unexpected kind, which would otherwise land nowhere at all.
-        const said = String((e as { message?: string })?.message ?? e).toUpperCase();
+        const said = NOTICE.unexpected(String((e as { message?: string })?.message ?? e));
         setError(said);
-        useNet.getState().patch({ status: 'error', detail: said });
+        useNet.getState().patch({ status: 'error', notice: said });
       })
       .finally(() => setBusy(false));
   };
@@ -207,11 +209,11 @@ export default function OnlineScreen() {
                 <Text style={{ fontFamily: F.display, fontSize: 30, lineHeight: 32, letterSpacing: 6, color: C.goldBright }}>
                   {resume.code}
                 </Text>
-                <Text style={{ fontFamily: F.body, fontSize: 9, letterSpacing: 1.4, color: C.muted7, lineHeight: 13 }}>
+                <Prose tone="quiet" style={{ marginTop: 2 }}>
                   {resume.inMatch
-                    ? `ROUND ${resume.game} OF 12 WAS STILL ON IT. IF THE OTHER PHONE IS STILL THERE, THE MATCH PICKS UP EXACTLY WHERE IT STOPPED.`
-                    : 'THE SEAT IS STILL YOURS IF THE OTHER PHONE HAS NOT CLOSED THE TABLE.'}
-                </Text>
+                    ? `Round ${resume.game} of 12 was still on it. If the other phone is still there, the match picks up exactly where it stopped.`
+                    : 'The seat is still yours if the other phone has not closed the table.'}
+                </Prose>
               </View>
               <BigButton
                 label={busy ? 'ONE MOMENT…' : 'TAKE YOUR SEAT AGAIN'}
@@ -258,7 +260,7 @@ export default function OnlineScreen() {
               { value: 'hotspot', label: 'HOTSPOT', caption: 'A PHONE MAKES ONE' },
             ]}
           />
-          {error ? <StatusLine tone="rust" text={error} style={{ marginTop: 10 }} /> : null}
+          {error ? <NoticeBoard notice={error} style={{ marginTop: 12 }} /> : null}
 
           <View style={{ marginTop: 22 }} onLayout={form.track('name')}>
             <NameField
@@ -299,19 +301,19 @@ export default function OnlineScreen() {
               <Text style={{ fontFamily: F.semi, fontSize: 10, letterSpacing: 2, color: C.muted2 }}>
                 {role === 'host' ? 'THIS PHONE MAKES THE WI-FI' : 'JOIN THE OTHER PHONE FIRST'}
               </Text>
-              <Text style={{ fontFamily: F.body, fontSize: 9.5, letterSpacing: 1.2, color: C.creamMute, lineHeight: 15 }}>
+              <Prose>
                 {role === 'host'
-                  ? 'TURN ON PERSONAL HOTSPOT (IPHONE) OR MOBILE HOTSPOT (ANDROID), HAVE THE OTHER PLAYER JOIN THAT NETWORK, THEN OPEN THE TABLE AND READ OUT THE CODE.'
-                  : "IN WI-FI SETTINGS, JOIN THE NETWORK THE OTHER PHONE IS SHARING. THEN ENTER THE CODE — THIS PHONE GOES LOOKING FOR THE TABLE ON ITS OWN."}
-              </Text>
-              <Text style={{ fontFamily: F.body, fontSize: 9, letterSpacing: 1.2, color: C.muted7, lineHeight: 13 }}>
-                NO ROUTER, NO COMPUTER, NO ADDRESS TO TYPE. THE PHONE SHARING THE HOTSPOT IS THE ONE THAT OPENS THE TABLE.
-              </Text>
+                  ? 'Turn on Personal Hotspot (iPhone) or Mobile Hotspot (Android), have the other player join that network, then open the table and read out the code.'
+                  : 'In Wi-Fi settings, join the network the other phone is sharing. Then enter the code — this phone goes looking for the table on its own.'}
+              </Prose>
+              <Prose tone="quiet">
+                No router, no computer, nothing to type. The phone sharing the hotspot is the one that opens it.
+              </Prose>
               {role === 'host' && !canServe ? (
-                <Text style={{ fontFamily: F.bold, fontSize: 9, letterSpacing: 1.2, color: C.rustText, lineHeight: 13 }}>
-                  THIS COPY CANNOT OPEN A PORT, SO IT CANNOT SERVE THE TABLE — NORMAL IN EXPO GO, WHICH IS NOT ALLOWED
-                  ONE. THE PHONE SHARING THE HOTSPOT NEEDS A BUILD THAT CAN; THE OTHER ONE DOES NOT.
-                </Text>
+                <Prose tone="warn">
+                  This copy cannot open a port, so it cannot serve the table — normal in Expo Go, which is not allowed
+                  one. The phone sharing the hotspot needs a build that can; the other one does not.
+                </Prose>
               ) : null}
             </Appear>
           ) : null}
@@ -339,17 +341,17 @@ export default function OnlineScreen() {
                     ? `PORT ${DEFAULT_PORT}`
                     : 'FINDING THIS PHONE ON THE WI-FI…'}
               </Text>
-              <Text style={{ fontFamily: F.body, fontSize: 9, letterSpacing: 1.2, color: C.muted7, lineHeight: 13 }}>
-                NO COMPUTER NEEDED. THE OTHER PHONE ENTERS THIS ADDRESS AND THE CODE ABOVE, ON THE SAME WI-FI.
-              </Text>
+              <Prose tone="quiet">
+                No computer needed. The other phone enters this address and the code above, on the same Wi-Fi.
+              </Prose>
               {askedForIp && !ownIp ? (
                 // The table is served either way — but an address nobody can read
                 // out is no use to the other phone, and saying "finding it…" for
                 // ever is worse than saying it was not found.
-                <Text style={{ fontFamily: F.bold, fontSize: 9, letterSpacing: 1.2, color: C.rustText, lineHeight: 13 }}>
-                  THIS PHONE WILL NOT SAY WHICH ADDRESS IT IS ON. THE TABLE IS STILL SERVED — LOOK THE ADDRESS UP IN
-                  WI-FI SETTINGS, OR USE HOTSPOT ABOVE, WHERE THERE IS NOTHING TO READ OUT AT ALL.
-                </Text>
+                <Prose tone="warn">
+                  This phone will not say which address it is on. The table is still served — look the address up in
+                  Wi-Fi settings, or use Hotspot above, where there is nothing to read out at all.
+                </Prose>
               ) : null}
             </Appear>
           ) : null}
@@ -376,18 +378,16 @@ export default function OnlineScreen() {
                 autoCapitalize="none"
                 keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'default'}
               />
-              <Text style={{ fontFamily: F.body, fontSize: 9, letterSpacing: 1.2, color: C.muted7, marginTop: 8, lineHeight: 13 }}>
+              <Prose tone="quiet" style={{ marginTop: 8 }}>
                 {role === 'host'
-                  ? 'THE COMPUTER YOU RAN `npm start` ON IS ALREADY RUNNING THE RELAY. ITS ADDRESS IS FILLED IN BELOW IF THIS PHONE COULD WORK IT OUT — BOTH PHONES USE THE SAME ONE.'
-                  : 'IF THE OTHER PHONE IS SERVING THE TABLE ITSELF, THIS IS THE ADDRESS ON ITS SCREEN — READ IT OUT AND TYPE IT HERE. IF A COMPUTER IS RELAYING INSTEAD, IT IS THAT COMPUTER, AND IT IS ALREADY FILLED IN.'}
-              </Text>
+                  ? 'The computer you ran `npm start` on is already running the relay, and its address is filled in above if this phone could work it out. Both phones use the same one.'
+                  : 'If the other phone is serving the table itself, this is the address on its screen — read it out and type it here. If a computer is relaying instead, it is that computer, and it is already filled in.'}
+              </Prose>
               {role === 'host' ? (
-                <Text
-                  style={{ fontFamily: F.bold, fontSize: 9, letterSpacing: 1.2, color: C.rustText, marginTop: 10, lineHeight: 13 }}
-                >
-                  THIS COPY CANNOT OPEN A PORT, SO A COMPUTER HAS TO SIT IN THE MIDDLE — NORMAL IN EXPO GO, WHICH IS NOT
-                  ALLOWED ONE. A BUILD THAT CAN OPEN ONE HOSTS THE TABLE ON THIS PHONE, WITH NO COMPUTER AT ALL.
-                </Text>
+                <Prose tone="warn" style={{ marginTop: 10 }}>
+                  This copy cannot open a port, so a computer has to sit in the middle — normal in Expo Go, which is not
+                  allowed one. A build that can open one hosts the table on this phone, with no computer at all.
+                </Prose>
               ) : null}
             </Appear>
           ) : null}

@@ -3,7 +3,18 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { C, F } from '../src/theme';
-import { BigButton, Chip, GradientText, HelpButton, SideMono, StatusLine, useWaitingPulse } from '../src/ui/kit';
+import {
+  BigButton,
+  Chip,
+  GradientText,
+  HelpButton,
+  NoticeBoard,
+  OutlineButton,
+  Prose,
+  SideMono,
+  StatusLine,
+  useWaitingPulse,
+} from '../src/ui/kit';
 import { SidePanel, StakesPanel } from '../src/ui/Terms';
 import { TableBackground } from '../src/ui/Radial';
 import { nameOf, useGame } from '../src/store/useGame';
@@ -11,6 +22,7 @@ import { useNet } from '../src/store/useNet';
 import { requestExit } from '../src/ui/ExitGuard';
 import { retryNow } from '../src/net/session';
 import { STATUS_WORD } from '../src/net/protocol';
+import { says } from '../src/net/notice';
 import { tapLight } from '../src/haptics';
 
 export default function LobbyScreen() {
@@ -79,34 +91,32 @@ export default function LobbyScreen() {
             </GradientText>
           </Animated.View>
 
-          <StatusLine
-            style={{ marginTop: 8 }}
-            tone={failed ? 'rust' : seated ? 'gold' : 'dim'}
-            text={net.detail || STATUS_WORD[net.status]}
-          />
+          {/* A word for the states that need one, and a proper notice for the
+              ones with something to explain. */}
+          {net.notice?.fix || net.notice?.tech ? (
+            <NoticeBoard
+              style={{ marginTop: 12 }}
+              notice={net.notice}
+              tone={failed ? 'rust' : net.retrying ? 'gold' : 'dim'}
+              attempt={net.attempt}
+            />
+          ) : (
+            <StatusLine
+              style={{ marginTop: 8 }}
+              tone={failed ? 'rust' : seated ? 'gold' : 'dim'}
+              text={(net.notice ?? says(STATUS_WORD[net.status])).say}
+            />
+          )}
 
           {failed ? (
-            <Pressable
-              onPress={() => {
-                tapLight();
-                retryNow();
-              }}
-              style={({ pressed }) => ({
-                marginTop: 10,
-                height: 38,
-                paddingHorizontal: 20,
-                borderRadius: 999,
-                alignItems: 'center',
-                justifyContent: 'center',
-                borderWidth: 1,
-                borderColor: C.goldBorder,
-                backgroundColor: pressed ? 'rgba(212,165,60,0.16)' : 'rgba(0,0,0,0.3)',
-              })}
-            >
-              <Text style={{ fontFamily: F.bold, fontSize: 10.5, letterSpacing: 2.5, color: C.goldSoft }}>
-                TRY AGAIN
-              </Text>
-            </Pressable>
+            <OutlineButton
+              label="TRY AGAIN"
+              onPress={retryNow}
+              fontSize={17}
+              letterSpacing={2.6}
+              padV={11}
+              style={{ marginTop: 12, alignSelf: 'center', paddingHorizontal: 30 }}
+            />
           ) : null}
 
           {net.info?.hint ? (
@@ -128,35 +138,15 @@ export default function LobbyScreen() {
           ) : null}
 
           {isHost && net.info?.mode === 'hotspot' ? (
-            <Text
-              style={{
-                fontFamily: F.body,
-                fontSize: 9,
-                letterSpacing: 1.2,
-                color: C.muted7,
-                marginTop: 8,
-                textAlign: 'center',
-                lineHeight: 13,
-              }}
-            >
-              THE OTHER PHONE JOINS THIS HOTSPOT, ENTERS THE CODE, AND FINDS THIS TABLE BY ITSELF
-            </Text>
+            <Prose tone="quiet" style={{ marginTop: 8, textAlign: 'center' }}>
+              The other phone joins this hotspot, enters the code, and finds this table by itself.
+            </Prose>
           ) : null}
 
           {isHost && net.info?.mode === 'relay' ? (
-            <Text
-              style={{
-                fontFamily: F.body,
-                fontSize: 9,
-                letterSpacing: 1.2,
-                color: C.muted7,
-                marginTop: 8,
-                textAlign: 'center',
-                lineHeight: 13,
-              }}
-            >
-              THE OTHER PHONE NEEDS THIS CODE AND THE SAME RELAY ADDRESS
-            </Text>
+            <Prose tone="quiet" style={{ marginTop: 8, textAlign: 'center' }}>
+              The other phone needs this code and the same relay address.
+            </Prose>
           ) : null}
         </View>
 

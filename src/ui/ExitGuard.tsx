@@ -52,7 +52,8 @@ export function ExitGuard() {
 
   const leave = useCallback(() => {
     hide();
-    if (useGame.getState().netRole !== 'off') stopSession('THE OTHER PLAYER LEFT THE TABLE');
+    // Said to the other phone, and shown there as prose rather than shouted.
+    if (useGame.getState().netRole !== 'off') stopSession('The other player left the table.');
     useGame.getState().endMatch();
     router.replace('/');
   }, [hide, router]);

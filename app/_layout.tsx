@@ -95,6 +95,8 @@ const PHASE_ROUTE = {
 
 type Banner = {
   text: string;
+  /** The quiet second line: which go this is, or what a tap would do. */
+  note?: string;
   /** A link being dialled again is amber and patient; a dead one is rust. */
   tone: 'trying' | 'lost';
   /** Whether tapping the banner would actually do anything. */
@@ -111,16 +113,27 @@ function useLinkBanner(): Banner | null {
   const pathname = usePathname();
   const active = useNet((s) => s.active);
   const status = useNet((s) => s.status);
-  const detail = useNet((s) => s.detail);
+  const notice = useNet((s) => s.notice);
+  const attempt = useNet((s) => s.attempt);
   const peerHere = useNet((s) => s.peerHere);
   const retrying = useNet((s) => s.retrying);
   const inMatch = useGame((s) => s.phase !== 'idle' && s.phase !== 'lobby');
 
   if (!active || pathname === '/lobby') return null;
 
+  // One line is all a banner has, so it carries the headline only — the whole
+  // notice, explanation and all, is on the table screen the tap leads back to.
+  //
   // The link is coming back on its own. Nothing is lost yet, and saying so is
   // the whole point — a player who thinks the match is gone stops playing.
-  if (retrying) return { text: detail || 'TAKING THE SEAT AGAIN', tone: 'trying', canRetry: false };
+  if (retrying) {
+    return {
+      text: notice?.say ?? 'TAKING THE SEAT AGAIN',
+      note: attempt > 0 ? `TRY ${attempt}` : undefined,
+      tone: 'trying',
+      canRetry: false,
+    };
+  }
 
   const dead = status === 'error' || status === 'closed';
   if (!dead && !(inMatch && !peerHere)) return null;
@@ -129,18 +142,19 @@ function useLinkBanner(): Banner | null {
   // peer who really was here and left.
   return {
     text:
-      detail ||
+      notice?.say ??
       (status === 'error'
         ? STATUS_WORD.error
         : !peerHere
-          ? 'THE OTHER PHONE HAS LEFT THE TABLE — THEIR SEAT IS STILL HERE'
+          ? 'THE OTHER PHONE LEFT — THEIR SEAT IS STILL HERE'
           : STATUS_WORD[status]),
+    note: dead ? 'TAP TO TRY AGAIN' : undefined,
     tone: 'lost',
     canRetry: dead,
   };
 }
 
-function LinkBanner({ text, tone, canRetry, topInset }: Banner & { topInset: number }) {
+function LinkBanner({ text, note, tone, canRetry, topInset }: Banner & { topInset: number }) {
   // It drops in rather than appearing, and breathes for as long as it is still
   // dialling — so a glance tells the player whether anything is being done.
   const enter = useSharedValue(0);
@@ -183,7 +197,7 @@ function LinkBanner({ text, tone, canRetry, topInset }: Banner & { topInset: num
         <Text style={{ fontFamily: F.bold, fontSize: 10, letterSpacing: 1.8, color: C.creamOnRust, textAlign: 'center' }}>
           {text}
         </Text>
-        {canRetry ? (
+        {note ? (
           <Text
             style={{
               fontFamily: F.body,
@@ -194,7 +208,7 @@ function LinkBanner({ text, tone, canRetry, topInset }: Banner & { topInset: num
               marginTop: 3,
             }}
           >
-            TAP TO TRY AGAIN
+            {note}
           </Text>
         ) : null}
       </Pressable>

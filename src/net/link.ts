@@ -1,6 +1,7 @@
 // One duplex message pipe between two phones, however the bytes actually travel.
 
 import type { LinkStatus, NetMessage } from './protocol';
+import type { Notice } from './notice';
 
 export type TransportKind = 'wifi';
 
@@ -11,7 +12,7 @@ export type LinkEvents = {
    * ordinary kind, where the other phone is simply not open yet and the answer
    * is to try once more.
    */
-  onStatus: (status: LinkStatus, detail?: string, fatal?: boolean) => void;
+  onStatus: (status: LinkStatus, notice?: Notice, fatal?: boolean) => void;
   onMessage: (msg: NetMessage) => void;
 };
 
