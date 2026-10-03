@@ -21,7 +21,7 @@ import { useGame } from '../src/store/useGame';
 import { useNet } from '../src/store/useNet';
 import { forgetParkedTable, resumeSession, startSession } from '../src/net/session';
 import { wifiHostsItself } from '../src/net/wifi';
-import { defaultRelayAddress, localIpAddress } from '../src/net/discover';
+import { defaultRelayAddress, localIpAddress, parseAddress } from '../src/net/discover';
 import { DEFAULT_PORT, isCompleteRoomCode, makeRoomCode, normalizeRoomCode } from '../src/net/protocol';
 import { NOTICE, type Notice } from '../src/net/notice';
 import { tapLight } from '../src/haptics';
@@ -48,6 +48,8 @@ export default function OnlineScreen() {
   const [ownIp, setOwnIp] = useState('');
   /** Whether the asking is over, so "still looking" can stop being the answer. */
   const [askedForIp, setAskedForIp] = useState(false);
+  /** A guest who knows where the table is can say so; nobody has to. */
+  const [typing, setTyping] = useState(false);
 
   // Same as everywhere a name is typed: make room for the keyboard, and put the
   // field being filled in where the player can see it.
@@ -75,18 +77,23 @@ export default function OnlineScreen() {
   // and no relay address to type. The other phone dials this one directly.
   const canServe = wifiHostsItself();
   const directHost = role === 'host' && canServe;
-  // A hotspot table is always served by the phone sharing, and always found by
-  // the other one, so there is never an address to type on either side.
-  const needsAddress = !onHotspot && !directHost;
+  // A guest goes looking for the table, on a hotspot or a router's Wi-Fi alike,
+  // so the only address anybody must type is a relay's, by a host that has to
+  // use one.
+  const needsAddress = role === 'host' && !onHotspot && !directHost;
+  // A guest may still say where the table is. It is the first place looked.
+  const offersAddress = role === 'guest' && !onHotspot;
+  const typed = address.trim();
+  const addressOk = !typed || parseAddress(typed, DEFAULT_PORT) !== null;
   const ready = useMemo(
-    () => isCompleteRoomCode(code) && (!needsAddress || address.trim().length > 0) && !busy,
-    [code, needsAddress, address, busy],
+    () => isCompleteRoomCode(code) && (needsAddress ? typed.length > 0 && addressOk : addressOk) && !busy,
+    [code, needsAddress, typed, addressOk, busy],
   );
 
-  /** What to hand the driver: a hotspot guest is given nothing and goes looking. */
+  /** What to hand the driver: a guest's is only where to look first. */
   const dialAddress = () => {
     if (onHotspot) return role === 'host' ? ownIp : '';
-    return directHost ? ownIp : address.trim();
+    return directHost ? ownIp : typed;
   };
 
   /**
@@ -131,6 +138,7 @@ export default function OnlineScreen() {
         // other player types, so it has to travel with the session for display.
         address: dialAddress(),
         hotspot: onHotspot,
+        seek: role === 'guest',
         port: DEFAULT_PORT,
         name: p1.trim() || (role === 'host' ? 'Host' : 'Challenger'),
       }),
@@ -342,53 +350,111 @@ export default function OnlineScreen() {
                     : 'FINDING THIS PHONE ON THE WI-FI…'}
               </Text>
               <Prose tone="quiet">
-                No computer needed. The other phone enters this address and the code above, on the same Wi-Fi.
+                No computer needed. The other phone only needs the code above — it finds this one on the Wi-Fi by
+                itself. The address is here in case it asks.
               </Prose>
               {askedForIp && !ownIp ? (
-                // The table is served either way — but an address nobody can read
-                // out is no use to the other phone, and saying "finding it…" for
-                // ever is worse than saying it was not found.
+                // The table is served either way, and a guest finds it without an
+                // address — but saying "finding it…" for ever is worse than
+                // saying it was not found.
                 <Prose tone="warn">
-                  This phone will not say which address it is on. The table is still served — look the address up in
-                  Wi-Fi settings, or use Hotspot above, where there is nothing to read out at all.
+                  This phone will not say which address it is on. The table is still served and the other phone can
+                  still find it; if it cannot, look the address up in Wi-Fi settings.
                 </Prose>
               ) : null}
+            </Appear>
+          ) : null}
+
+          {offersAddress ? (
+            <Appear
+              style={{
+                marginTop: 18,
+                paddingVertical: 14,
+                paddingHorizontal: 16,
+                borderRadius: 12,
+                backgroundColor: 'rgba(0,0,0,0.3)',
+                borderWidth: 1,
+                borderColor: C.hairline,
+                gap: 7,
+              }}
+            >
+              <Text style={{ fontFamily: F.semi, fontSize: 10, letterSpacing: 2, color: C.muted2 }}>
+                THIS PHONE FINDS THE TABLE
+              </Text>
+              <Prose>
+                Be on the same Wi-Fi as the other phone and enter its code. This one searches the network for the table
+                by itself — whether the other phone is serving it or a computer is relaying it.
+              </Prose>
+              {typing ? (
+                <View onLayout={form.track('address')} style={{ marginTop: 6 }}>
+                  <NameField
+                    label={`ADDRESS — IF YOU KNOW IT · PORT ${DEFAULT_PORT}`}
+                    value={address}
+                    onChangeText={setAddress}
+                    placeholder="192.168.1.20"
+                    onFocus={form.focus('address')}
+                    // An address is longer than a name, has no capitals in it, and
+                    // is mostly digits and dots.
+                    maxLength={40}
+                    autoCapitalize="none"
+                    keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'default'}
+                  />
+                  {addressOk ? (
+                    <Prose tone="quiet" style={{ marginTop: 8 }}>
+                      Looked at first, then the rest of the network. Copy it as the other phone shows it — the port can
+                      come too.
+                    </Prose>
+                  ) : (
+                    <Prose tone="warn" style={{ marginTop: 8 }}>
+                      That is not an address this phone can dial. It looks like four numbers with dots between them.
+                    </Prose>
+                  )}
+                </View>
+              ) : (
+                <Pressable
+                  onPress={() => {
+                    tapLight();
+                    setTyping(true);
+                  }}
+                  hitSlop={8}
+                  style={({ pressed }) => ({ alignSelf: 'flex-start', paddingVertical: 6, opacity: pressed ? 0.6 : 1 })}
+                >
+                  <Text style={{ fontFamily: F.semi, fontSize: 9.5, letterSpacing: 2, color: C.goldSoft }}>
+                    TYPE AN ADDRESS ›
+                  </Text>
+                </Pressable>
+              )}
             </Appear>
           ) : null}
 
           {needsAddress ? (
             <Appear style={{ marginTop: 18 }} onLayout={form.track('address')}>
               <NameField
-                // A guest is not necessarily dialling a relay at all: the other
-                // phone may be serving the table itself, in which case this is
-                // the address that phone is showing. Calling it the relay
-                // address sent players to the wrong machine entirely.
-                label={
-                  role === 'host'
-                    ? `RELAY ADDRESS · PORT ${DEFAULT_PORT}`
-                    : `WHERE THE TABLE IS · PORT ${DEFAULT_PORT}`
-                }
+                label={`RELAY ADDRESS · PORT ${DEFAULT_PORT}`}
                 value={address}
                 onChangeText={setAddress}
                 placeholder="192.168.1.20"
                 onFocus={form.focus('address')}
                 // An address is longer than a name, has no capitals in it, and is
                 // mostly digits and dots.
-                maxLength={31}
+                maxLength={40}
                 autoCapitalize="none"
                 keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'default'}
               />
-              <Prose tone="quiet" style={{ marginTop: 8 }}>
-                {role === 'host'
-                  ? 'The computer you ran `npm start` on is already running the relay, and its address is filled in above if this phone could work it out. Both phones use the same one.'
-                  : 'If the other phone is serving the table itself, this is the address on its screen — read it out and type it here. If a computer is relaying instead, it is that computer, and it is already filled in.'}
-              </Prose>
-              {role === 'host' ? (
-                <Prose tone="warn" style={{ marginTop: 10 }}>
-                  This copy cannot open a port, so a computer has to sit in the middle — normal in Expo Go, which is not
-                  allowed one. A build that can open one hosts the table on this phone, with no computer at all.
+              {addressOk ? (
+                <Prose tone="quiet" style={{ marginTop: 8 }}>
+                  The computer you ran `npm start` on is already running the relay, and its address is filled in above if
+                  this phone could work it out. The other phone finds it by itself.
                 </Prose>
-              ) : null}
+              ) : (
+                <Prose tone="warn" style={{ marginTop: 8 }}>
+                  That is not an address this phone can dial. It looks like four numbers with dots between them.
+                </Prose>
+              )}
+              <Prose tone="warn" style={{ marginTop: 10 }}>
+                This copy cannot open a port, so a computer has to sit in the middle — normal in Expo Go, which is not
+                allowed one. A build that can open one hosts the table on this phone, with no computer at all.
+              </Prose>
             </Appear>
           ) : null}
 

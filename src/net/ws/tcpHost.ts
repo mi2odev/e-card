@@ -90,26 +90,35 @@ export function startTcpHost(port: number, room: string, h: TcpHostHandlers): Tc
 function listen(tcp: TcpModule, port: number, room: string, h: TcpHostHandlers): TcpHostHandle | null {
   /** The one guest seat. `live` goes false the moment a socket stops owning it. */
   let seat: { socket: RawSocket; live: boolean } | null = null;
+  /** Set once the table is put away, so a listen that lands late is undone. */
+  let stopped = false;
 
   const server = tcp.createServer((socket) => {
-    // One guest per table — but a phone that dropped off the Wi-Fi leaves a
-    // socket that is dead without being closed, and it is the same phone that
-    // then needs the seat back. So the newest dialler takes it, and the old
-    // socket is dropped rather than the new one.
-    if (seat) {
-      seat.live = false;
-      try {
-        seat.socket.destroy();
-      } catch {
-        /* already gone */
-      }
-    }
-    const mine = { socket, live: true };
-    seat = mine;
+    // Nobody is seated just for opening a socket. A browser checking whether
+    // this phone can be reached, a search dialling every address on the
+    // network, a dial that lands after it was given up on — none of them has
+    // the room code, and none of them may cost the player at the table their
+    // seat. Only a socket that has passed the handshake takes it.
+    const mine = { socket, live: false };
 
     const wrapped: ByteSocket = {
-      write: (bytes) => socket.write(bytes),
-      destroy: () => socket.destroy(),
+      // The native socket throws on a write once it is closed, and a close can
+      // land between any two writes. A frame for a socket that is gone has
+      // nowhere to go; it must not take a heartbeat or a store update with it.
+      write: (bytes) => {
+        try {
+          socket.write(bytes);
+        } catch {
+          /* gone; its close is on the way */
+        }
+      },
+      destroy: () => {
+        try {
+          socket.destroy();
+        } catch {
+          /* already gone */
+        }
+      },
       onData: (cb) => socket.on('data', (d) => cb(toBytes(d))),
       onClose: (cb) => socket.on('close', () => cb()),
       onError: (cb) => socket.on('error', (e) => cb(e)),
@@ -117,7 +126,21 @@ function listen(tcp: TcpModule, port: number, room: string, h: TcpHostHandlers):
 
     attachHostConnection(wrapped, room, {
       onOpen: (conn) => {
-        if (mine.live) h.onGuest(conn);
+        // One guest per table — but a phone that dropped off the Wi-Fi leaves a
+        // socket that is dead without being closed, and it is the same phone
+        // that then needs the seat back. So the newest socket with the code
+        // takes it, and the old one is dropped rather than the new one.
+        if (seat && seat !== mine) {
+          seat.live = false;
+          try {
+            seat.socket.destroy();
+          } catch {
+            /* already gone */
+          }
+        }
+        mine.live = true;
+        seat = mine;
+        h.onGuest(conn);
       },
       onText: (text) => {
         if (mine.live) h.onText(text);
@@ -133,21 +156,35 @@ function listen(tcp: TcpModule, port: number, room: string, h: TcpHostHandlers):
     });
   });
 
-  server.on('error', (e) => h.onError(errorText(e)));
-  try {
-    server.listen({ port, host: '0.0.0.0' }, h.onListening);
-  } catch (e) {
-    h.onError(errorText(e));
-    return null;
-  }
-
-  return { stop: () => {
+  const close = () => {
     try {
       server.close();
     } catch {
       /* already down */
     }
-  } };
+  };
+
+  server.on('error', (e) => {
+    if (!stopped) h.onError(errorText(e));
+  });
+  try {
+    server.listen({ port, host: '0.0.0.0' }, () => {
+      // Given up on before it got here — a close asked for while the listen was
+      // still in flight is a no-op, and would leave the port held for good.
+      if (stopped) return close();
+      h.onListening();
+    });
+  } catch (e) {
+    h.onError(errorText(e));
+    return null;
+  }
+
+  return {
+    stop: () => {
+      stopped = true;
+      close();
+    },
+  };
 }
 
 export function errorText(e: unknown): string {

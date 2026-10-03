@@ -56,6 +56,28 @@ export const NOTICE = {
     tech: tried.length ? `tried ${tried.join(', ')} · port ${port}` : `port ${port}`,
   }),
 
+  /** A whole Wi-Fi searched, and no table with that code on it. */
+  noWifiTable: (named: string[], swept: number, port: number): Notice => ({
+    say: 'NO TABLE ON THIS WI-FI',
+    fix: `Check that both phones are on the same Wi-Fi, that the other one has pressed OPEN THE TABLE, and that the code matches. If the other phone shows an address, open TYPE AN ADDRESS and enter it.`,
+    tech: [named.length ? `tried ${named.join(', ')}` : '', swept ? `${swept} more on this network` : '', `port ${port}`]
+      .filter(Boolean)
+      .join(' · '),
+  }),
+
+  /** A guest with no address of its own has no network to look across. */
+  cannotSearch: (): Notice => ({
+    say: 'THIS PHONE CANNOT SEE THE WI-FI',
+    fix: `It could not work out its own address, so it has nowhere to look. Check it has joined the Wi-Fi, or type in the address the other phone is showing.`,
+  }),
+
+  /** Something typed that no network could be dialled at. */
+  badAddress: (typed: string): Notice => ({
+    say: 'THAT ADDRESS WILL NOT WORK',
+    fix: `Type it the way the other phone shows it — four numbers with dots between them. A port after a colon is fine too.`,
+    tech: typed.trim() || 'nothing was typed',
+  }),
+
   /* ---------------------------------------------------------- serving */
 
   /**
@@ -147,6 +169,15 @@ export const NOTICE = {
     tech: why,
   }),
 } as const;
+
+/** What a Wi-Fi guest is doing while it looks. Not a fault — a state. */
+export const lookingOnWifi = (sweep: number): Notice => ({
+  say: 'LOOKING FOR THE TABLE',
+  fix:
+    sweep > 1
+      ? `Nothing yet. It keeps looking — the other phone may still be opening its table.`
+      : `Searching this Wi-Fi for a phone with the code. There is nothing to type.`,
+});
 
 /** What a hotspot guest is doing while it looks. Not a fault — a state. */
 export const lookingForHotspot = (sweep: number): Notice => ({

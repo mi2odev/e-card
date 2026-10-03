@@ -14,13 +14,18 @@ export type LinkEvents = {
    */
   onStatus: (status: LinkStatus, notice?: Notice, fatal?: boolean) => void;
   onMessage: (msg: NetMessage) => void;
+  /** A guest looking for the table: how many of the addresses it means to try it has tried. */
+  onSearch?: (dialled: number, total: number) => void;
 };
 
 /** How this link ended up working, so the lobby can tell the players what to do. */
 export type LinkInfo = {
-  mode: 'direct' | 'relay' | 'hotspot';
+  /** `found` is a guest that went looking for the table rather than being told where it was. */
+  mode: 'direct' | 'relay' | 'hotspot' | 'found';
   /** Short line shown under the room code, e.g. the address to type in. */
   hint: string;
+  /** Where a search found the table, so the next dial can go straight back to it. */
+  found?: string;
 };
 
 export type Link = {
@@ -40,8 +45,18 @@ export type Link = {
  * the player left the table, or it has already been redialled. A driver that
  * takes its time finding the other phone is expected to ask, and to give up
  * when the answer is no.
+ *
+ * `seek` asks a guest to go looking for the table rather than dial `address`
+ * alone; the address, if there is one, is simply the first place it looks.
  */
-type Dialling = { code: string; address: string; port: number; hotspot?: boolean; stillWanted?: () => boolean };
+type Dialling = {
+  code: string;
+  address: string;
+  port: number;
+  hotspot?: boolean;
+  seek?: boolean;
+  stillWanted?: () => boolean;
+};
 
 export type HostOptions = Dialling;
 export type JoinOptions = Dialling;

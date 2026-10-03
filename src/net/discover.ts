@@ -95,3 +95,67 @@ export function hotspotTargets(ownIp: string): string[] {
   if (octets) add(`${octets[0]}.${octets[1]}.${octets[2]}.254`);
   return out;
 }
+
+/**
+ * Every other address on this phone's own network, nearest first.
+ *
+ * A phone serving a table on a router's Wi-Fi is somewhere on the same /24 as
+ * the phone looking for it — home routers hand addresses out from one small
+ * range, and usually in order, so the other phone is most often a handful of
+ * numbers away. Dialling outwards from our own address finds it in the first
+ * few dozen tries rather than after walking the whole range.
+ */
+export function lanTargets(ownIp: string): string[] {
+  const own = ownIp.trim();
+  if (!isIpv4(own)) return [];
+  const [a, b, c, d] = own.split('.').map(Number);
+  const out: string[] = [];
+  for (let step = 1; step < 254; step++) {
+    for (const n of [d - step, d + step]) {
+      if (n >= 1 && n <= 254) out.push(`${a}.${b}.${c}.${n}`);
+    }
+  }
+  return out;
+}
+
+const isIpv4 = (s: string) => IPV4.test(s) && s.split('.').every((o) => Number(o) <= 255);
+
+/** Somewhere to dial: a host, and the port the table is on there. */
+export type Endpoint = { host: string; port: number };
+
+export const endpointText = (e: Endpoint) => `${e.host}:${e.port}`;
+
+/**
+ * Read an address the way a player actually types it.
+ *
+ * The phone serving a table shows `192.168.1.31:8787`, the relay prints the
+ * same, and its browser page says to enter "this whole address" — so the port
+ * comes along more often than not, and so does the `http://` off a browser
+ * bar. All of that used to be glued onto `:8787` again, which made a URL with
+ * two ports in it; Android's socket layer throws on one of those outright.
+ *
+ * Commas count as dots, since some numeric keyboards only offer the one.
+ * Returns null for something that cannot be dialled at all.
+ */
+export function parseAddress(raw: string, defaultPort: number): Endpoint | null {
+  let s = raw.trim().replace(/\s+/g, '');
+  if (!s) return null;
+  s = s.replace(/^[a-z][a-z0-9+.-]*:\/\//i, ''); // scheme
+  s = s.split(/[/?#]/)[0]; // path and query
+  s = s.slice(s.lastIndexOf('@') + 1); // credentials, never meant
+
+  let host = s;
+  let port = defaultPort;
+  const withPort = /^(.*):(\d{1,5})$/.exec(s);
+  if (withPort) {
+    host = withPort[1];
+    port = Number(withPort[2]);
+  }
+  if (/^[\d,.]+$/.test(host)) host = host.replace(/,/g, '.');
+  host = host.toLowerCase();
+
+  if (!host || !Number.isInteger(port) || port < 1 || port > 65535) return null;
+  if (/^[\d.]+$/.test(host)) return isIpv4(host) ? { host, port } : null;
+  // A name, for the rare network that hands them out (`laptop.local`).
+  return /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/.test(host) ? { host, port } : null;
+}
