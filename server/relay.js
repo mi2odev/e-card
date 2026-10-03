@@ -14,6 +14,10 @@
  * and every text frame it sends is forwarded verbatim to the other member of the
  * room. Each side is told {"t":"peer","state":"joined"|"left"} as the room fills
  * and empties.
+ *
+ * A guest that adds `&find=1` is searching the network for its table rather than
+ * dialling one it was told about, and is turned away unless that room has a
+ * host in it — otherwise every search would stop at the first relay it met.
  */
 
 'use strict';
@@ -105,11 +109,12 @@ function readFrames(buf, sink) {
 
 function roomOf(pathname) {
   const q = pathname.indexOf('?');
-  if (q < 0) return { room: '', role: '' };
+  if (q < 0) return { room: '', role: '', find: false };
   const params = new URLSearchParams(pathname.slice(q + 1));
   return {
     room: String(params.get('room') || '').toUpperCase(),
     role: String(params.get('role') || '').toLowerCase(),
+    find: params.get('find') === '1',
   };
 }
 
@@ -213,8 +218,10 @@ const server = net.createServer((socket) => {
         return health(socket);
       }
 
-      const { room, role } = roomOf(m[1]);
+      const { room, role, find } = roomOf(m[1]);
       if (!room || (role !== 'host' && role !== 'guest')) return bail(400, 'Bad Request');
+      // A guest searching for its table is only answered where the table is.
+      if (find && role === 'guest' && !rooms.get(room)?.host) return bail(404, 'No Such Table');
 
       const slot = rooms.get(room) || { host: null, guest: null, touched: Date.now() };
       if (slot[role]) {

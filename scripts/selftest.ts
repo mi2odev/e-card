@@ -604,11 +604,18 @@ async function testHotspot() {
   try {
     // 127.0.0.2 is a real address that refuses the connection — the wrong guess
     // a phone always makes at least one of.
-    const found = await firstAnswering(['127.0.0.2', '127.0.0.1'], port, ROOM, 4000);
-    eq(found?.address, '127.0.0.1', 'the search keeps the address that answers');
+    const found = await firstAnswering(
+      [
+        { host: '127.0.0.2', port },
+        { host: '127.0.0.1', port },
+      ],
+      ROOM,
+      { waitMs: 4000 },
+    );
+    eq(found?.at.host, '127.0.0.1', 'the search keeps the address that answers');
     found?.socket.close();
 
-    const wrongRoom = await firstAnswering(['127.0.0.1'], port, 'ZZZZ', 2500);
+    const wrongRoom = await firstAnswering([{ host: '127.0.0.1', port }], 'ZZZZ', { waitMs: 2500 });
     check(wrongRoom === null, 'something listening on the wrong room code is not our table');
 
     const G = {
@@ -808,12 +815,20 @@ async function testServedByThisPhone() {
   console.log('\nA table served by the phone itself');
   const nodeNet = await import('node:net');
 
+  // Every socket the fake native side has accepted, so a check can pull one out
+  // from under the table the way a phone dropping off the Wi-Fi would.
+  const accepted: import('node:net').Socket[] = [];
   const fakeTcp = {
     createServer(handler: (s: unknown) => void) {
       const srv = nodeNet.createServer((sock) => {
+        accepted.push(sock);
         handler({
           on: (ev: string, cb: (a?: unknown) => void) => sock.on(ev, cb),
-          write: (b: Uint8Array) => sock.write(Buffer.from(b)),
+          // The real native socket throws on a write once it is closed.
+          write: (b: Uint8Array) => {
+            if (sock.destroyed) throw new Error('Socket is closed.');
+            sock.write(Buffer.from(b));
+          },
           destroy: () => sock.destroy(),
         });
       });
@@ -868,11 +883,291 @@ async function testServedByThisPhone() {
       check(words.toLowerCase().includes('already in use'), 'along with why it could not', words);
       check(!words.includes('Expo Go'), 'and Expo Go is not blamed for a build that has the port', words);
       check(!!told && !!(told as { tech?: string }).tech, 'with the machine words kept out of the way', words);
+
+      // On a router's Wi-Fi the same thing used to fall back to a "relay" at
+      // this phone's own address, and report that nothing was relaying there.
+      let wifiTold: { say: string; fix?: string; tech?: string } | null = null;
+      let wifiFatal = true;
+      await wifiDriver.host(
+        { code: ROOM, address: '', port: takenPort },
+        {
+          onStatus: (st, n, fatal) => {
+            if (st === 'error') {
+              wifiTold = n ?? null;
+              wifiFatal = !!fatal;
+            }
+          },
+          onMessage: () => {},
+        },
+      );
+      const wifiWords = said(wifiTold);
+      check(wifiWords.toLowerCase().includes('already in use'), 'a Wi-Fi table that cannot get its port says so too', wifiWords);
+      check(!wifiWords.includes('RELAY'), 'rather than going looking for a relay at its own address', wifiWords);
+      check(!wifiFatal, 'and is tried again, since ports come free', wifiFatal);
     } finally {
       squatter.close();
     }
+
+    await testSeatHeld(wifiDriver, accepted);
   } finally {
     delete (globalThis as { require?: unknown }).require;
+  }
+}
+
+/**
+ * The seat on a phone-served table belongs to whoever proved they had the code.
+ *
+ * It used to go to whatever opened a socket last — so a browser checking the
+ * phone could be reached (which the README suggests), or any other phone's
+ * search dialling every address on the network, took the seat away from the
+ * player sitting in it mid-match.
+ */
+async function testSeatHeld(
+  driver: typeof import('../src/net/wifi.ts').wifiDriver,
+  accepted: import('node:net').Socket[],
+) {
+  const port = PORT + 19;
+  const heard: string[] = [];
+  const served = await driver.host(
+    { code: ROOM, address: '127.0.0.1', port },
+    {
+      onStatus: () => {},
+      onMessage: (m) => heard.push(m.t === 'peer' ? `peer:${m.state}` : m.t),
+    },
+  );
+
+  const seated = new WebSocket(`ws://127.0.0.1:${port}/?room=${ROOM}&role=guest`);
+  const got: string[] = [];
+  seated.onmessage = (e) => got.push(String(e.data));
+  await new Promise<void>((r) => {
+    seated.onopen = () => r();
+  });
+  await until(() => heard.includes('peer:joined'), 'a guest with the code takes the seat');
+
+  // Somebody checks the table is reachable, and somebody else dials the wrong room.
+  const page = await fetch(`http://127.0.0.1:${port}/`);
+  eq(page.status, 200, 'a browser visit is answered while a match is on');
+  await new Promise<void>((r) => {
+    const stray = new WebSocket(`ws://127.0.0.1:${port}/?room=ZZZZ&role=guest`);
+    stray.onerror = () => r();
+    stray.onopen = () => r();
+  });
+  await sleep(200);
+  check(!heard.includes('peer:left'), 'and neither of them costs the seated player their seat', heard);
+  served.send({ t: 'ping', ts: 1 });
+  await until(() => got.some((raw) => JSON.parse(raw).t === 'ping'), 'who is still being talked to');
+
+  // The guest's socket dies under the table; the next frame has nowhere to go.
+  for (const sock of accepted) sock.destroy();
+  let threw: unknown = null;
+  try {
+    served.send({ t: 'ping', ts: 2 });
+    served.send({ t: 'ping', ts: 3 });
+  } catch (e) {
+    threw = e;
+  }
+  check(threw === null, 'a frame for a socket that just died does not throw', String(threw));
+  await until(() => heard.includes('peer:left'), 'and the empty seat is noticed');
+
+  served.close();
+  seated.close();
+  await sleep(100);
+}
+
+/* --------------------------------------------- finding the table on the Wi-Fi */
+
+async function testAddresses() {
+  console.log('\nReading an address');
+  const { parseAddress, lanTargets } = await import('../src/net/discover.ts');
+
+  eq(parseAddress('192.168.1.31', 8787), { host: '192.168.1.31', port: 8787 }, 'a bare address takes the usual port');
+  eq(
+    parseAddress('192.168.1.31:8787', 8787),
+    { host: '192.168.1.31', port: 8787 },
+    'the address exactly as the host phone shows it is not given a second port',
+  );
+  eq(parseAddress(' http://192.168.1.31:9000/ ', 8787), { host: '192.168.1.31', port: 9000 }, 'nor is one copied off a browser bar');
+  eq(parseAddress('192,168,1,31', 8787), { host: '192.168.1.31', port: 8787 }, 'commas from a numeric keyboard count as dots');
+  eq(parseAddress('Laptop.local', 8787), { host: 'laptop.local', port: 8787 }, 'a name is dialled as a name');
+  eq(parseAddress('192.168.1', 8787), null, 'three numbers is not an address');
+  eq(parseAddress('192.168.1.300', 8787), null, 'nor is a number past 255');
+  eq(parseAddress('192.168.1.31:99999', 8787), null, 'nor a port past 65535');
+  eq(parseAddress('', 8787), null, 'and nothing is nothing');
+
+  const near = lanTargets('192.168.1.40');
+  eq(near.slice(0, 4), ['192.168.1.39', '192.168.1.41', '192.168.1.38', '192.168.1.42'], 'the search works outwards from this phone');
+  eq(near.length, 253, 'across every other address on the network');
+  check(!near.includes('192.168.1.40'), 'never dialling itself', near.length);
+  eq(lanTargets(''), [], 'and a phone that does not know where it is has nothing to sweep');
+}
+
+/**
+ * The guest is told nothing but the code. The table is on another phone on the
+ * same Wi-Fi, a few addresses along, and nobody reads anything out.
+ */
+async function testFindingOnWifi() {
+  console.log('\nFinding the table on the Wi-Fi');
+  const nodeNet = await import('node:net');
+  const { attachHostConnection } = await import('../src/net/ws/hostServer.ts');
+  const port = PORT + 20;
+
+  const server = nodeNet.createServer((sock) => {
+    let conn: { send: (t: string) => void } | null = null;
+    attachHostConnection(
+      {
+        write: (b) => sock.write(Buffer.from(b)),
+        destroy: () => sock.destroy(),
+        onData: (cb) => sock.on('data', (d) => cb(new Uint8Array(d))),
+        onClose: (cb) => sock.on('close', cb),
+        onError: (cb) => sock.on('error', cb),
+      },
+      ROOM,
+      {
+        onOpen: (c) => {
+          conn = c;
+        },
+        onText: (t) => {
+          if (JSON.parse(t).t === 'hello') conn?.send(JSON.stringify({ t: 'welcome', v: 1, name: 'Kaiji' }));
+        },
+        onClose: () => {},
+      },
+    );
+  });
+  // Every 127.x address is this machine, so 127.0.0.6 stands in for the other
+  // phone and 127.0.0.9 for this one, three addresses apart — with the rest of
+  // the range refusing, as addresses with no table behind them do.
+  await new Promise<void>((r) => server.listen(port, '127.0.0.6', r));
+
+  const { firstAnswering, seekTargets } = await import('../src/net/wifi.ts');
+  const targets = seekTargets(null, '127.0.0.9', port);
+  check(targets.length > 250, 'a guest with only the code dials the whole network', targets.length);
+  eq(targets[0].host, '127.0.0.1', 'the gateway first, in case the other phone is sharing it');
+  let dialled = 0;
+  const swept = await firstAnswering(targets, ROOM, { width: 40, onDialled: (n) => (dialled = n) });
+  eq(swept?.at.host, '127.0.0.6', 'and finds the phone serving the table a few addresses along');
+  check(dialled < targets.length, 'without having to walk all of it first', dialled);
+  if (swept) swept.socket.close();
+
+  const G = {
+    session: await import('../src/net/session.ts?device=lan'),
+    game: await import('../src/store/useGame.ts?device=lan'),
+    net: await import('../src/store/useNet.ts?device=lan'),
+  };
+  try {
+    void G.session.startSession({
+      kind: 'wifi',
+      role: 'guest',
+      seek: true,
+      code: ROOM,
+      address: '127.0.0.6',
+      port,
+      name: 'Tonegawa',
+    });
+    await until(() => G.net.useNet.getState().status === 'connected', 'a guest that goes looking sits down', 15_000);
+    eq(G.net.useNet.getState().info?.mode, 'found', 'and the lobby is told it went looking');
+    check(
+      (G.net.useNet.getState().info?.hint ?? '').includes('127.0.0.6'),
+      'naming where it found it',
+      G.net.useNet.getState().info?.hint,
+    );
+    await until(() => G.game.useGame.getState().p1 === 'Kaiji', 'and the table introduces itself');
+    eq(G.net.useNet.getState().scan, null, 'with the search put away once it is over');
+  } finally {
+    G.session.stopSession();
+    await sleep(150);
+    server.close();
+  }
+
+  await testFindingAtTheRelay();
+  await testTypedAsShown();
+}
+
+/**
+ * A relay opens for any room code — that is how a guest who arrives first gets
+ * to wait — so a search has to ask it whether the table is really there, or it
+ * would stop at the first relay it met and sit in an empty room.
+ */
+async function testFindingAtTheRelay() {
+  const port = PORT + 21;
+  const relay = spawn('node', [resolvePath(ROOT, 'server/relay.js')], {
+    env: { ...process.env, PORT: String(port) },
+    stdio: ['ignore', 'ignore', 'pipe'],
+  });
+  await sleep(500);
+
+  const G = {
+    session: await import('../src/net/session.ts?device=lanr-g'),
+    game: await import('../src/store/useGame.ts?device=lanr-g'),
+    net: await import('../src/store/useNet.ts?device=lanr-g'),
+  };
+  const H = { session: await import('../src/net/session.ts?device=lanr-h') };
+  try {
+    void G.session.startSession({
+      kind: 'wifi',
+      role: 'guest',
+      seek: true,
+      code: ROOM,
+      address: '127.0.0.1',
+      port,
+      name: 'Tonegawa',
+    });
+    await sleep(1500);
+    eq(G.net.useNet.getState().status, 'connecting', 'a relay with nobody hosting is not taken for the table');
+    check(!G.net.useNet.getState().peerHere, 'and the guest does not sit in its empty room', G.net.useNet.getState());
+
+    await H.session.startSession({ kind: 'wifi', role: 'host', code: ROOM, address: '127.0.0.1', port, name: 'Kaiji' });
+    await until(() => G.net.useNet.getState().peerHere, 'once the host is there, the search finds it', 15_000);
+    await until(() => G.game.useGame.getState().p1 === 'Kaiji', 'and the two are introduced');
+  } finally {
+    G.session.stopSession();
+    H.session.stopSession();
+    await sleep(150);
+    relay.kill();
+  }
+}
+
+/** The address as the host phone shows it, port and all, as a guest who was told where to go. */
+async function testTypedAsShown() {
+  const port = PORT + 22;
+  const relay = spawn('node', [resolvePath(ROOT, 'server/relay.js')], {
+    env: { ...process.env, PORT: String(port) },
+    stdio: ['ignore', 'ignore', 'pipe'],
+  });
+  await sleep(500);
+
+  const G = {
+    session: await import('../src/net/session.ts?device=typed-g'),
+    net: await import('../src/store/useNet.ts?device=typed-g'),
+  };
+  const H = { session: await import('../src/net/session.ts?device=typed-h') };
+  try {
+    await H.session.startSession({ kind: 'wifi', role: 'host', code: ROOM, address: `127.0.0.1:${port}`, port: 9, name: 'Kaiji' });
+    await sleep(150);
+    await G.session.startSession({
+      kind: 'wifi',
+      role: 'guest',
+      code: ROOM,
+      address: `http://127.0.0.1:${port}/`,
+      port: 9,
+      name: 'Tonegawa',
+    });
+    await until(() => G.net.useNet.getState().peerHere, 'an address typed with its port and all reaches the table');
+
+    // A guest told the wrong thing is told so once, not dialled for a minute.
+    const W = {
+      session: await import('../src/net/session.ts?device=typed-w'),
+      net: await import('../src/store/useNet.ts?device=typed-w'),
+    };
+    await W.session.startSession({ kind: 'wifi', role: 'guest', code: ROOM, address: '192.168.1', port, name: 'X' });
+    await until(() => W.net.useNet.getState().status === 'error', 'an address that cannot be dialled is called out');
+    check(said(W.net.useNet.getState().notice).includes('WILL NOT WORK'), 'as an address', said(W.net.useNet.getState().notice));
+    eq(W.net.useNet.getState().retrying, false, 'without dialling it again and again');
+    W.session.stopSession();
+  } finally {
+    G.session.stopSession();
+    H.session.stopSession();
+    await sleep(150);
+    relay.kill();
   }
 }
 
@@ -1211,12 +1506,16 @@ async function testUnreachable() {
  */
 async function testHowItReads() {
   console.log('\nHow it reads');
-  const { NOTICE, lookingForHotspot } = await import('../src/net/notice.ts');
+  const { NOTICE, lookingForHotspot, lookingOnWifi } = await import('../src/net/notice.ts');
 
   const every = [
     NOTICE.nothingAnswered('192.168.1.34', 8787),
     NOTICE.noRelay('192.168.1.20', 8787),
     NOTICE.noHotspotTable(['172.20.10.1', '192.168.43.1'], 8787),
+    NOTICE.noWifiTable(['192.168.1.20:8787', '192.168.1.1:8787'], 248, 8787),
+    NOTICE.cannotSearch(),
+    NOTICE.badAddress('192.168.1'),
+    NOTICE.badAddress(''),
     NOTICE.cannotServe(),
     NOTICE.portTaken('listen EADDRINUSE: address already in use 0.0.0.0:8787', 8787),
     NOTICE.servingFailed('socket closed'),
@@ -1234,6 +1533,8 @@ async function testHowItReads() {
     NOTICE.unexpected('Network request failed'),
     lookingForHotspot(1),
     lookingForHotspot(4),
+    lookingOnWifi(1),
+    lookingOnWifi(3),
   ];
 
   const tooLong = every.filter((n) => n.say.length > 34).map((n) => n.say);
@@ -1331,6 +1632,8 @@ await testRedaction();
 await testOnlineMatch();
 await testHotspot();
 await testServedByThisPhone();
+await testAddresses();
+await testFindingOnWifi();
 await testPressingFirst();
 await testHowItReads();
 await testComingBack();

@@ -97,6 +97,11 @@ export type StartOptions = {
   name: string;
   /** Wi-Fi tables only: the host phone is the one sharing the network — see ./wifi. */
   hotspot?: boolean;
+  /**
+   * A guest that goes looking for the table rather than dialling `address`
+   * alone. Once found, the table is dialled straight back at where it was.
+   */
+  seek?: boolean;
 };
 
 export const isLive = () => link !== null;
@@ -260,6 +265,9 @@ function onStatus(role: 'host' | 'guest', status: LinkStatus, notice?: Notice, f
 
   // A redial reports its own progress — 'starting', then 'connecting' — and none
   // of that should push aside the line telling the player what is going on.
+  // Whatever the link is doing now, it is not in the middle of a search.
+  if (status !== 'connecting' && useNet.getState().scan) useNet.getState().patch({ scan: null });
+
   if (!notice && (status === 'starting' || status === 'connecting') && useNet.getState().retrying) {
     useNet.getState().patch({ status });
     return;
@@ -429,6 +437,7 @@ async function openLink(opts: StartOptions): Promise<void> {
     address: opts.address ?? '',
     port: opts.port ?? DEFAULT_PORT,
     hotspot: opts.hotspot === true,
+    seek: opts.seek === true,
     stillWanted: wanted,
   };
   const events = {
@@ -437,6 +446,9 @@ async function openLink(opts: StartOptions): Promise<void> {
     },
     onMessage: (m: NetMessage) => {
       if (wanted()) onMessage(opts.role, m);
+    },
+    onSearch: (dialled: number, total: number) => {
+      if (wanted()) useNet.getState().patch({ scan: { dialled, total } });
     },
   };
 
@@ -450,8 +462,16 @@ async function openLink(opts: StartOptions): Promise<void> {
   }
 
   link = created;
-  useNet.getState().patch({ info: created.info });
+  useNet.getState().patch({ info: created.info, scan: null });
   startHeartbeat();
+
+  // A table that had to be searched for is not searched for again: the next
+  // dial — after a drop, or taking the seat back — goes straight to where it
+  // answered, and the backoff above does the waiting.
+  if (created.info.found) {
+    opts.address = created.info.found;
+    opts.seek = false;
+  }
 
   // Some transports (BLE) are already open by the time the link is handed back,
   // so the status callback fired before there was anything to send on.
@@ -487,6 +507,7 @@ export async function startSession(opts: StartOptions): Promise<void> {
     info: null,
     retrying: false,
     attempt: 0,
+    scan: null,
     resume: null,
   });
 

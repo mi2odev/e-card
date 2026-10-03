@@ -32,6 +32,8 @@ export type NetUiState = {
   retrying: boolean;
   /** Which attempt at getting back is in flight, counting from 1. */
   attempt: number;
+  /** A guest searching the network for the table: how far through it is. */
+  scan: { dialled: number; total: number } | null;
   /** The table this phone walked away from, offered back on the two-phones screen. */
   resume: ResumeInfo | null;
 };
@@ -56,6 +58,7 @@ const initial: NetUiState = {
   peerHere: false,
   retrying: false,
   attempt: 0,
+  scan: null,
   resume: null,
 };
 
