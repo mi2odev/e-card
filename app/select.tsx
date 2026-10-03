@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -7,6 +7,7 @@ import { C, F, sideColor } from '../src/theme';
 import { Appear, BigButton, Chip, Fade, HelpButton, SideMono, StatusLine } from '../src/ui/kit';
 import { DiscardPair, FanCard, MiniBack } from '../src/ui/Cards';
 import { TableBackground } from '../src/ui/Radial';
+import { Bob } from '../src/ui/Motion';
 import { localPlayer, localSide, nameOf, otherSide, sidePlayerNow, useGame } from '../src/store/useGame';
 import { LABEL, PLAYS_PER_GAME, SIDE_WORD, fmt } from '../src/game/logic';
 import { netPick } from '../src/net/actions';
@@ -35,6 +36,14 @@ export default function SelectScreen() {
   const iAmLocked = !!picks[mySide];
   const canPlay = myTurn && !iAmLocked;
   const selCard = sel >= 0 ? myHand[sel] : undefined;
+  // Online, the other player is choosing on their own phone: their cards stir
+  // while it is on them, and this phone nudges its holder when it comes back.
+  const theyAreChoosing = online && !myTurn && !oppLocked;
+  const hadTurn = useRef(canPlay);
+  useEffect(() => {
+    if (online && canPlay && !hadTurn.current) tapMedium();
+    hadTurn.current = canPlay;
+  }, [online, canPlay]);
 
   const commit = () => {
     tapMedium();
@@ -106,8 +115,10 @@ export default function SelectScreen() {
               {`${oppHand.length} CARDS IN HAND`}
             </Text>
           </View>
-          {oppHand.map((c) => (
-            <MiniBack key={c.id} />
+          {oppHand.map((c, i) => (
+            <Bob key={c.id} active={theyAreChoosing} delay={i * 110} lift={3}>
+              <MiniBack />
+            </Bob>
           ))}
           {oppLocked ? (
             <Appear

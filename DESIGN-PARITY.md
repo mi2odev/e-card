@@ -90,6 +90,22 @@ read as a glitch — each one is a fade or a slide in the same easing vocabulary
 | The wager bumps when it is moved | `app/scoreboard.tsx` | The number is the whole panel; it should answer a tap |
 | Dropped-link banner | `app/_layout.tsx` | One rust line above everything, only when the link is actually broken |
 | Confirm before abandoning | `src/ui/ExitGuard.tsx` | The design had no back button to guard. Same sheet as the rules modal; the safe choice is the gold button and the scrim, abandoning is the quiet rust outline. Replaces the scoreboard's old two-tap arm, which was too easy to trigger twice |
+| Rings go out from the table code while the seat opposite is empty, and fade when it fills | `app/lobby.tsx`, `Radar` in `src/ui/Motion.tsx` | A table calling for its other player. Joins the code's existing breath rather than replacing it |
+| A thin gold bar fills as a joining phone searches the Wi-Fi, with the count beneath it | `app/lobby.tsx` `ScanBar` | The search is the slow part of joining; a bar that moves says it is getting somewhere |
+| Somebody sitting down is felt — a success tap on both phones | `app/lobby.tsx` | The arrival is the one thing that screen is for |
+| A band of light crosses the primary button every few seconds | `Shine`, `BigButton shine` | Only on the one button a screen is waiting for: PASS & PLAY, BEGIN THE MATCH, DEAL, OPEN/JOIN once ready, REMATCH. Never on a disabled one |
+| Gold dust drifts up through the light over the title | `Dust` | Fourteen motes, 9–16 s each, at most 75 % opacity. The room, not a feature |
+| The handoff seal spins in like a coin and comes to rest face up | `app/handoff.tsx` | 820 ms on the entrance curve; the breathing glow behind it is unchanged |
+| The face-down card lifts off the felt as it turns (scale 1 → 1.08 → 1 across the flip) | `FlipCard` in `src/ui/Cards.tsx` | Same 950 ms and the same curve — only the depth is new |
+| At the verdict, sparks and a ring go out from the card that took the round, and light crosses its face | `app/reveal.tsx`, `Burst`, `FlipCard glint` | Runs on the existing `rev` 4 step, so it lands with the banner and never delays the continue button |
+| The 5× Slave upset jolts the table sideways and washes the screen rust for an instant; an Emperor win warms it gold, faintly | `useShake`, `Flash` | The upset is the moment the whole game is built around; it should not look like any other result |
+| SIDES SWAP is stamped onto the table — in large and loose, landing hard, with a heavy tap | `app/scoreboard.tsx`, `Stamp` | It was a banner that was simply there; the swap is a turning point in the match |
+| The scoreboard arrives in order: round, players, history, wager | `app/scoreboard.tsx` | 80 ms apart, 380 ms each. The deal button is never held back |
+| While it is the other phone's move, their face-down cards stir one after another; when it comes back, this phone taps | `app/select.tsx`, `Bob` | Online only. Two phones apart, nothing else says the other player is thinking |
+| Match over: confetti over a winner, the final purses counted out from the opening stake, and the winner's row marked | `app/end.tsx`, `Confetti`, `Tally` | The last screen of twelve rounds deserved more than a table of numbers |
+
+Every one of these stands down under the platform's reduced-motion setting (Reanimated's
+`useReducedMotion`): the decoration goes, and the states it decorates are all still shown.
 
 Online play changes two things about the flow itself:
 

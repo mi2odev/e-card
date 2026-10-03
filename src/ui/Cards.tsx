@@ -5,6 +5,7 @@ import { C, F } from '../theme';
 import { CARD_ART, CARD_BACK } from '../assets';
 import { shadow } from './kit';
 import { Radial } from './Radial';
+import { Shine } from './Motion';
 
 export const CARD_RATIO = 4 / 3; // height = width * 4/3  (aspect-ratio: 3/4)
 
@@ -106,6 +107,7 @@ export function FlipCard({
   flipped,
   enterFrom,
   dramaMs = 550,
+  glint,
   children,
 }: {
   faceSource: ImageSourcePropType;
@@ -114,6 +116,8 @@ export function FlipCard({
   flipped: boolean;
   enterFrom: 'top' | 'bottom';
   dramaMs?: number;
+  /** Light running across the face — the card that took the round. */
+  glint?: boolean;
   children?: React.ReactNode;
 }) {
   const enter = useSharedValue(0);
@@ -134,8 +138,14 @@ export function FlipCard({
     transform: [{ translateY: offset * (1 - enter.value) }],
   }));
 
+  // The card comes up off the felt to turn over and settles back down onto it,
+  // rather than spinning flat in place. Same 950 ms, same curve.
   const innerStyle = useAnimatedStyle(() => ({
-    transform: [{ perspective: 1100 }, { rotateY: `${flip.value * 180}deg` }],
+    transform: [
+      { perspective: 1100 },
+      { rotateY: `${flip.value * 180}deg` },
+      { scale: 1 + 0.08 * Math.sin(Math.PI * flip.value) },
+    ],
   }));
 
   // Faces are swapped by opacity at the halfway point — the most reliable way to
@@ -159,7 +169,10 @@ export function FlipCard({
             { transform: [{ rotateY: '180deg' }] },
           ]}
         >
-          <CardFace source={faceSource} width={width} />
+          <View style={{ borderRadius: 12, overflow: 'hidden' }}>
+            <CardFace source={faceSource} width={width} />
+            {glint ? <Shine every={2600} delay={250} strength={0.5} /> : null}
+          </View>
         </Animated.View>
       </Animated.View>
       {children}

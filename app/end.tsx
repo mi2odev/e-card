@@ -1,18 +1,21 @@
-import React from 'react';
-import { ScrollView, Text, View } from 'react-native';
+import React, { useEffect } from 'react';
+import { ScrollView, Text, useWindowDimensions, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C, F } from '../src/theme';
-import { BigButton, GradientText, HistoryStrip, OutlineButton } from '../src/ui/kit';
-import { TableBackground } from '../src/ui/Radial';
+import { Appear, BigButton, GradientText, HistoryStrip, OutlineButton, useCountUp } from '../src/ui/kit';
+import { Glow, TableBackground } from '../src/ui/Radial';
+import { Confetti } from '../src/ui/Motion';
 import { bankOf, nameOf, useGame, winsOf } from '../src/store/useGame';
 import { PlayerKey, fmt } from '../src/game/logic';
 import { netRematch } from '../src/net/actions';
 import { stopSession } from '../src/net/session';
+import { draw as drawBuzz, win } from '../src/haptics';
 
 export default function EndScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const screen = useWindowDimensions();
   const state = useGame();
   const { stakesOn, p1pts, p2pts, p1w, p2w, history, game, netRole } = state;
   const online = netRole !== 'off';
@@ -31,6 +34,14 @@ export default function EndScreen() {
   }
 
   const title = winner ? `${nameOf(state, winner).toUpperCase()} TAKES THE TABLE` : 'DEAD HEAT';
+  // The last word of the match is felt as well as read.
+  useEffect(() => {
+    if (winner) win();
+    else drawBuzz();
+    // Once, on arriving at the tally.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const sub = stakesOn
     ? `${n1.toUpperCase()} ${fmt(p1pts)} PTS · ${n2.toUpperCase()} ${fmt(p2pts)} PTS`
     : `${n1.toUpperCase()} ${p1w} — ${p2w} ${n2.toUpperCase()}`;
@@ -38,6 +49,12 @@ export default function EndScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: C.tableEdge }}>
       <TableBackground />
+      <Glow
+        color="rgba(226,180,80,0.22)"
+        edge={0.7}
+        style={{ left: screen.width / 2 - 230, top: insets.top - 60, width: 460, height: 360 }}
+      />
+      {winner ? <Confetti width={screen.width} height={screen.height} /> : null}
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{
@@ -50,17 +67,22 @@ export default function EndScreen() {
       >
         <Text style={{ fontFamily: F.body, fontSize: 11, letterSpacing: 4, color: C.muted3 }}>MATCH OVER</Text>
 
-        <View style={{ marginTop: 12 }}>
+        <Appear delay={120} duration={560} from={0} scaleFrom={0.82} style={{ marginTop: 12 }}>
           <GradientText style={{ fontFamily: F.display, fontSize: 44, lineHeight: 46, letterSpacing: 3, textAlign: 'center' }}>
             {title}
           </GradientText>
-        </View>
+        </Appear>
 
-        <Text style={{ fontFamily: F.body, fontSize: 11, letterSpacing: 2, color: C.muted, marginTop: 10, textAlign: 'center' }}>
-          {sub}
-        </Text>
+        <Appear delay={380} duration={420} from={6}>
+          <Text style={{ fontFamily: F.body, fontSize: 11, letterSpacing: 2, color: C.muted, marginTop: 10, textAlign: 'center' }}>
+            {sub}
+          </Text>
+        </Appear>
 
-        <View
+        <Appear
+          delay={520}
+          duration={420}
+          from={14}
           style={{
             width: '100%',
             marginTop: 22,
@@ -85,22 +107,33 @@ export default function EndScreen() {
                 borderTopColor: C.hairlineSoft,
               }}
             >
-              <Text numberOfLines={1} style={{ flex: 1, fontFamily: F.bold, fontSize: 15, letterSpacing: 0.5, color: C.cream }}>
-                {nameOf(state, p).toUpperCase()}
-              </Text>
-              <View style={{ alignItems: 'flex-end', gap: 2 }}>
-                <Text style={{ fontFamily: F.display, fontSize: 26, lineHeight: 27, color: C.creamWarm }}>
-                  {stakesOn ? fmt(bankOf(state, p)) : String(winsOf(state, p))}
+              <View style={{ flex: 1, gap: 2, minWidth: 0 }}>
+                <Text numberOfLines={1} style={{ fontFamily: F.bold, fontSize: 15, letterSpacing: 0.5, color: C.cream }}>
+                  {nameOf(state, p).toUpperCase()}
                 </Text>
+                {winner === p ? (
+                  <Text style={{ fontFamily: F.bold, fontSize: 9, letterSpacing: 2.4, color: C.goldText }}>
+                    TAKES THE TABLE
+                  </Text>
+                ) : null}
+              </View>
+              <View style={{ alignItems: 'flex-end', gap: 2 }}>
+                <Tally
+                  value={stakesOn ? bankOf(state, p) : winsOf(state, p)}
+                  from={stakesOn ? state.settings.startingBankroll : 0}
+                  money={stakesOn}
+                />
                 <Text style={{ fontFamily: F.body, fontSize: 9, letterSpacing: 1.5, color: C.muted2 }}>
                   {stakesOn ? `${winsOf(state, p)} WON` : 'ROUNDS WON'}
                 </Text>
               </View>
             </View>
           ))}
-        </View>
+        </Appear>
 
-        <HistoryStrip history={history} currentGame={game} inMatch={false} style={{ marginTop: 16 }} />
+        <Appear delay={640} duration={420} from={8}>
+          <HistoryStrip history={history} currentGame={game} inMatch={false} style={{ marginTop: 16 }} />
+        </Appear>
 
         <View style={{ flex: 1, minHeight: 20 }} />
 
@@ -110,6 +143,7 @@ export default function EndScreen() {
             netRematch();
             if (!online) router.replace('/scoreboard');
           }}
+          shine
           style={{ width: '100%' }}
         />
         <OutlineButton
@@ -123,5 +157,15 @@ export default function EndScreen() {
         />
       </ScrollView>
     </View>
+  );
+}
+
+/** A final purse, counted out from what both players sat down with. */
+function Tally({ value, from, money }: { value: number; from: number; money: boolean }) {
+  const shown = useCountUp(value, from, 1400);
+  return (
+    <Text style={{ fontFamily: F.display, fontSize: 26, lineHeight: 27, color: C.creamWarm }}>
+      {money ? fmt(shown) : String(shown)}
+    </Text>
   );
 }

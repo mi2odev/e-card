@@ -8,11 +8,12 @@ over Wi-Fi — including a Wi-Fi one of the phones makes itself. Expo SDK 54 · 
 ```bash
 npm install
 npx expo install --fix     # pins every package to the exact SDK 54 version
-npx expo start
+npm start                  # Metro, and the Wi-Fi relay two phones in Expo Go meet at
 ```
 
 Then scan the QR with **Expo Go** (iOS or Android), or press `a` / `i` for an emulator.
-If the bundler ever caches something stale: `npx expo start -c`.
+If the bundler ever caches something stale: `npm run start:clear`. Plain `npx expo start`
+works too, but without the relay — fine for pass & play, not for two phones in Expo Go.
 
 ```bash
 npm run typecheck   # tsc --noEmit
@@ -40,8 +41,9 @@ Then, before every game, the Slave side names the wager on the scoreboard:
 ## Two phones
 
 **Title → TWO PHONES.** One player opens a table and reads out a four-character code;
-the other joins with it. Each phone holds its own hand — there is no passing and no
-handoff screen, and both players choose their card at the same time.
+the other enters it and presses join. **That is all either of them types** — the joining
+phone searches the Wi-Fi for the table by itself (see **Finding the table** below). Each
+phone holds its own hand — there is no passing and no handoff screen.
 
 The host device owns the match: it shuffles, resolves every turn and moves the money.
 It sends the other phone a **redacted** view of the table, so the opponent's hand and
@@ -77,6 +79,31 @@ the parked table is gone with the process. A guest can still rejoin by typing th
 again, because the host is holding the table; but if the *host's* app is killed, the match
 it was keeping goes with it.
 
+### Finding the table
+
+The joining phone is never asked where the table is. It goes looking, with the code:
+
+1. the address typed in, if the player opened **TYPE AN ADDRESS** and gave one — or, in
+   Expo Go, the computer the app was loaded from, which is where the relay runs;
+2. the gateway a phone sharing a hotspot sits at, and the addresses iOS, Android and
+   Windows hand out by convention;
+3. every other address on its own network, outwards from its own — home routers hand
+   addresses out in order, so the other phone is usually a few numbers away.
+
+Forty are dialled at a time, and an address with nothing behind it gets under two
+seconds before its place goes to the next, so a whole home network takes seconds, not
+minutes. The lobby shows how far it has got. Whatever answers with the right code is the
+table: a phone serving one turns away a wrong code during the handshake, and the relay is
+asked to answer a search only when somebody is actually hosting that code — otherwise the
+search would stop at the first empty relay room it met. It keeps looking for about three
+quarters of a minute, because the other player is usually a few seconds behind; once
+found, a dropped link is dialled straight back at that address.
+
+An address can be typed the way the other phone shows it — `192.168.1.31:8787`, or
+`http://192.168.1.31:8787/` off a browser bar. The port is read off it rather than added a
+second time (which made a URL Android's socket layer throws on), commas count as dots, and
+anything that cannot be dialled is said once, before anything is dialled.
+
 ### Wi-Fi
 
 Both phones must be on the same network. Nothing leaves it and no internet is needed.
@@ -84,8 +111,8 @@ Both phones must be on the same network. Nothing leaves it and no internet is ne
 Inside **Expo Go** an app cannot open a listening port, so the two phones meet at a tiny
 relay on a computer on the same Wi-Fi. **`npm start` runs it for you**, beside Metro, on
 the machine the phones are already loading the app from — its lines are the dim ones
-marked `relay │`. Nothing to start, and nothing to type: that machine's address is the one
-the app pre-fills.
+marked `relay │`. Nothing to start, and nothing to type: the host's app pre-fills that
+machine's address, and the guest finds it by itself.
 
 ```bash
 npm start            # Metro and the relay together
@@ -112,20 +139,25 @@ saying it is running, so:
   try another.
 
 It has zero dependencies, keeps nothing after a room empties, and is about 250 lines
-(`server/relay.js`). The address field in the app is pre-filled with your Metro host,
-which is the same machine — so most of the time neither player types anything but the
-code.
+(`server/relay.js`). The host's address field is pre-filled with your Metro host, which is
+the same machine, and the guest searches for it — so neither player types anything but
+the code.
 
 In any build that is not Expo Go, `react-native-tcp-socket` is live and the host phone
 serves the room itself — the relay is not needed at all. See **Building it as a real app**
 above. The app detects this and switches automatically; the lobby says which mode you got.
 
-**When a phone is serving, the guest types that phone's address, not the computer's.** The
-phone that opened the table shows it in large type, and the lobby keeps showing it; the
-joining phone's field says *where the table is* rather than *relay address* for exactly
-this reason, since the pre-filled Metro address is the wrong one in that case. A host that
-could not read its own address off the Wi-Fi when the screen first asked goes back and
-asks again, so there is always something to read out.
+**When a phone is serving, the guest still types nothing** — it finds that phone on the
+Wi-Fi the same way. The phone that opened the table shows its own address in large type
+anyway, and the lobby keeps showing it, for a network the search cannot cover (one that
+is not a /24, say); typed into **TYPE AN ADDRESS** on the other phone, it is the first
+place looked. A host that could not read its own address off the Wi-Fi when the screen
+first asked goes back and asks again.
+
+**A seat only goes to a phone with the code.** Opening the host's address in a browser to
+check it can be reached, or another phone's search dialling past, does not unseat the
+player at the table — only a socket that has passed the handshake with the right code
+takes the seat, which is how the same phone gets it back after a drop.
 
 ### Hotspot — no router, no network to join
 
@@ -196,9 +228,9 @@ download onto both phones from the link EAS gives you. Add `"android": { "buildT
 Install the APK on both phones. Then:
 
 1. Both phones join the **same Wi-Fi**.
-2. Phone A: **TWO PHONES → OPEN**. It shows its own address (`192.168.1.31:8787`) and a
-   four-character code.
-3. Phone B: **TWO PHONES → JOIN**. Type phone A's address and the code.
+2. Phone A: **TWO PHONES → OPEN**. It shows a four-character code (and its own address,
+   `192.168.1.31:8787`, in case it is ever needed).
+3. Phone B: **TWO PHONES → JOIN**. Enter the code and press join; it finds phone A.
 4. Phone A presses **BEGIN THE MATCH**.
 
 Only the **host** needs the built app. A phone still running Expo Go can join it — a
@@ -222,8 +254,10 @@ Three pieces of platform config make this work, and are already in `app.json`:
 | `NSAllowsLocalNetworking: true` | The same problem on iOS — App Transport Security, scoped here to local addresses only |
 | `NSLocalNetworkUsageDescription` | iOS 14+ refuses local network access without a reason string to show the user |
 
-If the host phone cannot open the port for any reason, it falls back to the relay below
-rather than failing, and the lobby says which mode you got.
+If the host phone can serve but cannot open the port this time — usually the table it
+opened a moment ago, still letting go — it says so and tries again on its own. It does
+not fall back to a relay: the only address it has is its own, and dialling that for a
+relay only ever reported that none was there.
 
 `npx expo-doctor` reports `react-native-tcp-socket` as *untested on New Architecture*. It
 is a legacy `ReactContextBaseJavaModule`, which the New Architecture interop layer handles;
@@ -269,7 +303,8 @@ src/game/logic.ts    pure rules and money maths (no React)
 src/store/useGame.ts zustand match state + actions
 src/store/useNet.ts  connection state for the lobby, the banner and the offer to come back
 src/net/             see below
-src/ui/              kit.tsx (buttons, chips, keypad, rules modal), Terms.tsx, Cards.tsx, Radial.tsx
+src/ui/              kit.tsx (buttons, chips, keypad, rules modal), Terms.tsx, Cards.tsx, Radial.tsx,
+                     Motion.tsx (radar, glint, sparks, confetti, dust — all off under reduced motion)
 src/theme.ts         every colour and font token from the design
 server/relay.js      zero-dependency LAN relay
 scripts/dev.mjs      `npm start` — Metro and the relay together
@@ -285,7 +320,7 @@ session.ts     host authority: broadcast snapshots, apply guest intents, and get
 actions.ts     what screens call; host acts, guest asks
 link.ts        the Link / TransportDriver interfaces
 wifi.ts        direct-host, relay, or a table on one phone's hotspot — all plain WebSocket
-discover.ts    the little that can be guessed about where the other phone is
+discover.ts    reading a typed address, and every address the other phone could be at
 ws/            frames.ts (RFC 6455 codec), hostServer.ts, tcpHost.ts
 ```
 

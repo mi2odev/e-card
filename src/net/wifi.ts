@@ -536,8 +536,12 @@ async function seekTable(opts: JoinOptions, ev: LinkEvents): Promise<Link> {
   }
 
   if (!found) {
-    // Nobody to tell, if the search was abandoned rather than spent.
-    if (wanted()) ev.onStatus('error', missing(opts, tried, ownIp, !!typed));
+    // Nobody to tell, if the search was abandoned rather than spent. A search
+    // that was spent has already asked again and again for most of a minute;
+    // starting the whole sweep over on the session's backoff would keep the
+    // radio busy for minutes more, so it stops here and the lobby offers TRY
+    // AGAIN.
+    if (wanted()) ev.onStatus('error', missing(opts, tried, ownIp, !!typed), true);
     return deadLink;
   }
 
