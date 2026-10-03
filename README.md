@@ -101,8 +101,16 @@ found, a dropped link is dialled straight back at that address.
 
 An address can be typed the way the other phone shows it — `192.168.1.31:8787`, or
 `http://192.168.1.31:8787/` off a browser bar. The port is read off it rather than added a
-second time (which made a URL Android's socket layer throws on), commas count as dots, and
-anything that cannot be dialled is said once, before anything is dialled.
+second time, commas count as dots, and anything that cannot be dialled is said once,
+before anything is dialled.
+
+**A wrong address never closes the app.** On Android a WebSocket's URL goes straight to
+OkHttp on a native thread, and OkHttp throws on one it cannot parse — two ports, a comma, a
+space — where nothing in JavaScript can catch it, so the app simply quit. Every address is
+now read properly first, and every socket goes through one check (`dialable` in
+`src/net/wifi.ts`) that refuses anything the native layer could choke on. The self-test
+opens every socket through a stand-in as strict as OkHttp and fails if any of them would
+have closed the app.
 
 ### Wi-Fi
 
@@ -186,17 +194,29 @@ instead, and is usually the table this same phone opened a minute ago.
 There is no address field because neither phone could fill one in. A phone that is *sharing*
 a hotspot cannot read its own address off that interface: both platforms report the Wi-Fi
 address of a network you have **joined**, which is exactly the interface a hotspot host is
-not using. So the guest works it out instead. The phone handing out addresses is the
-gateway of the network it made, so the guest takes its own address (`172.20.10.4`, say) and
-dials the gateway (`172.20.10.1`), along with the addresses iOS, Android and Windows hand
-out by convention — all at once, keeping whichever answers. A table turns away the wrong
-room code during the handshake, so anything that answers *is* the table. A phone that has
-only just joined the hotspot may not know its own address for a second or two, so the whole
+not using. So the guest works it out instead. It takes its own address (`172.20.10.4`,
+say) and dials the gateway of that network (`172.20.10.1`) and the addresses iOS, Android
+and Windows hand out by convention — and then **every other address on the network**.
+
+The sweep is not a fallback; on most Androids it is the only thing that works. Since
+Android 11 a phone sharing a hotspot picks a random network *and a random address on it*
+(`192.168.85.137`, say), steering clear of `.1` on purpose, and nothing an app can read
+without native code says which. An iPhone is always at `172.20.10.1`, which is dialled
+first. A table turns away the wrong room code during the handshake, so anything that
+answers *is* the table; the whole network takes about twelve seconds to walk. A phone that
+has only just joined the hotspot may not know its own address for a second or two, so the
 list is worked out afresh on every pass rather than once.
 
 If nothing answers in the end, the app names every address it tried. Usually the phones are
-not actually on the same hotspot. Some Androids will not turn a hotspot on without mobile
-data, even though the game needs none of it.
+not actually on the same hotspot. Two Android quirks are worth knowing:
+
+- **Turn off mobile data on the joining phone if the hotspot has no internet.** Android
+  keeps mobile data as the way out when the Wi-Fi it joined cannot reach the internet, and
+  sends the game that way too — to a network the other phone is not on. The joining screen
+  says so. (If the sharing phone has mobile data on, its hotspot has internet and this
+  never comes up.)
+- Some Androids will not turn a hotspot on without mobile data, even though the game needs
+  none of it.
 
 If the sharing phone says it **could not open the port**, that is not Expo Go talking — a
 build that cannot serve at all says so in those words instead. It means something already

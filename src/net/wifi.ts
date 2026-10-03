@@ -25,7 +25,16 @@ import { decode, encode, type NetMessage } from './protocol';
 import { deadLink, type HostOptions, type JoinOptions, type Link, type LinkEvents, type TransportDriver } from './link';
 import { errorText, startTcpHost, tcpHostAvailable, type TcpHostHandle } from './ws/tcpHost';
 import type { Connection } from './ws/hostServer';
-import { type Endpoint, endpointText, hotspotTargets, lanTargets, localIpAddress, parseAddress } from './discover';
+import {
+  type Endpoint,
+  endpointText,
+  hotspotTargets,
+  isHostname,
+  isIpv4,
+  lanTargets,
+  localIpAddress,
+  parseAddress,
+} from './discover';
 import { NOTICE, lookingForHotspot, lookingOnWifi, type Notice } from './notice';
 
 /**
@@ -37,6 +46,31 @@ import { NOTICE, lookingForHotspot, lookingOnWifi, type Notice } from './notice'
  */
 const url = (at: Endpoint, code: string, role: 'host' | 'guest', find = false) =>
   `ws://${at.host}:${at.port}/?room=${encodeURIComponent(code)}&role=${role}${find ? '&find=1' : ''}`;
+
+const DIALABLE = /^ws:\/\/([^/:?#]+):(\d{1,5})\/\?room=[A-Za-z0-9]{1,8}&role=(host|guest)(&find=1)?$/;
+
+/**
+ * Whether a URL is one the native socket layer will take.
+ *
+ * On Android a WebSocket is handed straight to OkHttp on a native thread, and
+ * OkHttp throws on a URL it cannot parse — two ports, a comma, a space — where
+ * no try/catch in the app can reach it. The app does not report an error; it
+ * closes. Every address is read properly long before it gets here, so this is
+ * the last line, not the first: whatever slips past it is never dialled.
+ */
+export function dialable(target: string): boolean {
+  const m = DIALABLE.exec(target);
+  if (!m) return false;
+  const port = Number(m[2]);
+  const host = m[1];
+  return port >= 1 && port <= 65535 && (/^[\d.]+$/.test(host) ? isIpv4(host) : isHostname(host));
+}
+
+/** The one place a socket is opened. Throws — in JavaScript, where it can be caught — rather than crash. */
+function openSocket(target: string): WebSocket {
+  if (!dialable(target)) throw new Error(`not an address that can be dialled: ${target}`);
+  return new WebSocket(target);
+}
 
 /** Wire a socket — open or still dialling — into a link the session can use. */
 function socketLink(
@@ -115,9 +149,10 @@ function clientLink(
 ): Link {
   let socket: WebSocket;
   try {
-    socket = new WebSocket(target);
+    socket = openSocket(target);
   } catch (e) {
-    ev.onStatus('error', NOTICE.unexpected(errorText(e)));
+    // A URL that cannot be built now cannot be built on the next try either.
+    ev.onStatus('error', NOTICE.unexpected(errorText(e)), true);
     return deadLink;
   }
   return socketLink(socket, ev, info, unreachable, false, onOpen);
@@ -235,7 +270,7 @@ export function firstAnswering(targets: Target[], code: string, opts: SearchOpti
 
       let socket: WebSocket;
       try {
-        socket = new WebSocket(url(at, code, 'guest', true));
+        socket = openSocket(url(at, code, 'guest', true));
       } catch {
         // One address failing outright must not take the whole search with it.
         return next();
@@ -451,10 +486,16 @@ const BETWEEN_SWEEPS_MS = 700;
  * or the gateway a hotspot is at — are worth waiting on; the rest of the network
  * is mostly addresses with nothing behind them, and a phone serving a table on
  * the same Wi-Fi answers well inside this.
+ *
+ * The width is kept modest for Android's sake: a dial given up on there is not
+ * actually stopped (see `hangUp`), and runs on a native thread of its own until
+ * the network gives up on it too — a few seconds for an address with nobody
+ * behind it. Thirty-two at a time keeps that to a few dozen threads, and still
+ * walks a whole network in about twelve seconds.
  */
 const NAMED_WAIT_MS = 5000;
-const SWEEP_WAIT_MS = 1800;
-const SWEEP_WIDTH = 40;
+const SWEEP_WAIT_MS = 1500;
+const SWEEP_WIDTH = 32;
 
 /** Everything worth dialling for a table, best guess first. */
 export function seekTargets(typed: Endpoint | null, ownIp: string, port: number): Target[] {
@@ -565,10 +606,10 @@ async function seekTable(opts: JoinOptions, ev: LinkEvents): Promise<Link> {
 function missing(opts: JoinOptions, tried: Target[], ownIp: string, typed: boolean): Notice {
   const named = tried.filter((t) => (t.waitMs ?? NAMED_WAIT_MS) >= NAMED_WAIT_MS).map(endpointText);
   const swept = tried.length - named.length;
-  if (opts.hotspot) return NOTICE.noHotspotTable(named, opts.port);
   // Without its own address a phone has no network to search, and the handful of
   // fixed guesses it can still make are not what the player is expecting.
-  if (!ownIp && !typed) return NOTICE.cannotSearch();
+  if (!ownIp && !typed) return NOTICE.cannotSearch(!!opts.hotspot);
+  if (opts.hotspot) return NOTICE.noHotspotTable(named, swept, opts.port);
   return NOTICE.noWifiTable(named, swept, opts.port);
 }
 

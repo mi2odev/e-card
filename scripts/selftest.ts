@@ -1171,6 +1171,135 @@ async function testTypedAsShown() {
   }
 }
 
+/**
+ * A wrong address must never close the app.
+ *
+ * On Android a WebSocket's URL goes straight to OkHttp on a native thread, and
+ * OkHttp throws on one it cannot parse — out of reach of any try/catch, so the
+ * app simply closes. Typing the address the host shows, port and all, used to
+ * build `ws://…:8787:8787` and do exactly that. Here every socket the app opens
+ * is checked against a parser as strict as OkHttp's, whatever the player typed.
+ */
+async function testWrongAddresses() {
+  console.log('\nA wrong address does not close the app');
+  const { dialable } = await import('../src/net/wifi.ts');
+  check(dialable('ws://192.168.1.31:8787/?room=AB4K&role=guest'), 'a proper address is dialled');
+  check(dialable('ws://laptop.local:8787/?room=AB4K&role=host'), 'and so is a name');
+  for (const bad of [
+    'ws://192.168.1.31:8787:8787/?room=AB4K&role=guest',
+    'ws://192,168,1,31:8787/?room=AB4K&role=guest',
+    'ws://192.168.1. 31:8787/?room=AB4K&role=guest',
+    'ws://192.168.1.31:99999/?room=AB4K&role=guest',
+    'ws://192.168.1:8787/?room=AB4K&role=guest',
+    'ws://:8787/?room=AB4K&role=guest',
+    `ws://${'a'.repeat(64)}:8787/?room=AB4K&role=guest`,
+  ]) {
+    check(!dialable(bad), 'never dialled, whatever it was built from', bad);
+  }
+
+  // Stand in for Android: refuse, loudly, any URL OkHttp would throw on.
+  const wouldCrash: string[] = [];
+  let opened = 0;
+  const okhttpWouldTake = (u: string) => {
+    try {
+      const x = new URL(u);
+      const port = x.port === '' ? 80 : Number(x.port);
+      return x.protocol === 'ws:' && /^[a-z0-9.-]+$/.test(x.hostname) && port >= 1 && port <= 65535 && !/[\s,]/.test(u);
+    } catch {
+      return false;
+    }
+  };
+  const Real = globalThis.WebSocket;
+  class Strict extends Real {
+    constructor(u: string | URL, p?: string | string[]) {
+      opened++;
+      if (!okhttpWouldTake(String(u))) wouldCrash.push(String(u));
+      super(u, p);
+    }
+  }
+  globalThis.WebSocket = Strict as typeof WebSocket;
+
+  const port = PORT + 23;
+  const typos = [
+    `127.0.0.1:${port}:${port}`,
+    `http://127.0.0.1:99999/`,
+    '127.0.0',
+    '127.0.0.300',
+    'not an address!',
+    ':8787',
+    'ws://',
+    'a'.repeat(40) + '_',
+  ];
+  try {
+    for (const [i, typed] of typos.entries()) {
+      for (const role of ['guest', 'host'] as const) {
+        const W = {
+          session: await import(`../src/net/session.ts?device=typo-${role}-${i}`),
+          net: await import(`../src/store/useNet.ts?device=typo-${role}-${i}`),
+        };
+        await W.session.startSession({ kind: 'wifi', role, code: ROOM, address: typed, port, name: 'X' });
+        await until(() => W.net.useNet.getState().status === 'error', `${role} typing ${JSON.stringify(typed)} is told`, 2000);
+        check(!W.net.useNet.getState().retrying, 'once, without dialling it again', W.net.useNet.getState().attempt);
+        W.session.stopSession();
+      }
+    }
+    // And the ones that are right, however they were written, are dialled as written.
+    for (const [i, typed] of [`127.0.0.1:${port}`, ` http://127.0.0.1:${port}/x `, '127,0,0,1', '127.0.0. 1'].entries()) {
+      const W = { session: await import(`../src/net/session.ts?device=fine-${i}`) };
+      await W.session.startSession({ kind: 'wifi', role: 'guest', code: ROOM, address: typed, port, name: 'X' });
+      await sleep(150);
+      W.session.stopSession();
+    }
+    check(opened > 0, 'the addresses that were right were dialled', opened);
+    eq(wouldCrash, [], 'and nothing that reached the socket layer would have closed the app');
+  } finally {
+    globalThis.WebSocket = Real;
+  }
+}
+
+/**
+ * Since Android 11 a phone sharing a hotspot takes a random address on a random
+ * network, never .1 — so the gateway guesses alone never find it, and the guest
+ * has to sweep. The table here sits at the far end of the range from the guest.
+ */
+async function testRandomHotspotGateway() {
+  console.log('\nA hotspot at a random address');
+  const nodeNet = await import('node:net');
+  const { attachHostConnection } = await import('../src/net/ws/hostServer.ts');
+  const { firstAnswering, seekTargets } = await import('../src/net/wifi.ts');
+  const port = PORT + 24;
+
+  const server = nodeNet.createServer((sock) =>
+    attachHostConnection(
+      {
+        write: (b) => sock.write(Buffer.from(b)),
+        destroy: () => sock.destroy(),
+        onData: (cb) => sock.on('data', (d) => cb(new Uint8Array(d))),
+        onClose: (cb) => sock.on('close', cb),
+        onError: (cb) => sock.on('error', cb),
+      },
+      ROOM,
+      { onOpen: () => {}, onText: () => {}, onClose: () => {} },
+    ),
+  );
+  await new Promise<void>((r) => server.listen(port, '127.0.0.213', r));
+  try {
+    const targets = seekTargets(null, '127.0.0.9', port);
+    check(
+      !targets.slice(0, 5).some((t) => t.host === '127.0.0.213'),
+      'the sharing phone is not where any of the usual guesses look',
+      targets.slice(0, 5).map((t) => t.host),
+    );
+    const began = Date.now();
+    const found = await firstAnswering(targets, ROOM, { width: 32 });
+    eq(found?.at.host, '127.0.0.213', 'the sweep finds it all the same');
+    check(Date.now() - began < 15_000, 'well inside the time a guest keeps looking', Date.now() - began);
+    found?.socket.close();
+  } finally {
+    server.close();
+  }
+}
+
 /* ------------------------------------------------ coming back to the table */
 
 /**
@@ -1511,7 +1640,9 @@ async function testHowItReads() {
   const every = [
     NOTICE.nothingAnswered('192.168.1.34', 8787),
     NOTICE.noRelay('192.168.1.20', 8787),
-    NOTICE.noHotspotTable(['172.20.10.1', '192.168.43.1'], 8787),
+    NOTICE.noHotspotTable(['172.20.10.1', '192.168.43.1'], 0, 8787),
+    NOTICE.noHotspotTable(['192.168.85.1:8787'], 248, 8787),
+    NOTICE.cannotSearch(true),
     NOTICE.noWifiTable(['192.168.1.20:8787', '192.168.1.1:8787'], 248, 8787),
     NOTICE.cannotSearch(),
     NOTICE.badAddress('192.168.1'),
@@ -1633,7 +1764,9 @@ await testOnlineMatch();
 await testHotspot();
 await testServedByThisPhone();
 await testAddresses();
+await testWrongAddresses();
 await testFindingOnWifi();
+await testRandomHotspotGateway();
 await testPressingFirst();
 await testHowItReads();
 await testComingBack();

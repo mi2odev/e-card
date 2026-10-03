@@ -318,6 +318,15 @@ export default function OnlineScreen() {
               <Prose tone="quiet">
                 No router, no computer, nothing to type. The phone sharing the hotspot is the one that opens it.
               </Prose>
+              {role === 'guest' ? (
+                // Android keeps mobile data as the way out when the Wi-Fi it joined
+                // has no internet, and sends the game that way too — to a network
+                // the other phone is not on. Nothing an app can do about it without
+                // native code; the player can, in one tap.
+                <Prose tone="quiet">
+                  On Android, if the hotspot has no internet, turn off mobile data on this phone while you play.
+                </Prose>
+              ) : null}
               {role === 'host' && !canServe ? (
                 <Prose tone="warn">
                   This copy cannot open a port, so it cannot serve the table — normal in Expo Go, which is not allowed

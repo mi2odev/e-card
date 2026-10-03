@@ -50,10 +50,12 @@ export const NOTICE = {
   }),
 
   /** Nowhere to find a table on a network one of the phones is making. */
-  noHotspotTable: (tried: string[], port: number): Notice => ({
+  noHotspotTable: (tried: string[], swept: number, port: number): Notice => ({
     say: 'NO TABLE ON THIS HOTSPOT',
-    fix: `Join the other phone's hotspot in Wi-Fi settings, and check that it has pressed OPEN THE TABLE. The phone sharing the hotspot is the one that opens it.`,
-    tech: tried.length ? `tried ${tried.join(', ')} · port ${port}` : `port ${port}`,
+    fix: `Join the other phone's hotspot in Wi-Fi settings, and check that it has pressed OPEN THE TABLE — the phone sharing the hotspot is the one that opens it. On Android, if the hotspot has no internet, turn off mobile data on this phone: otherwise Android sends the game out over mobile data, where the other phone is not.`,
+    tech: [tried.length ? `tried ${tried.join(', ')}` : '', swept ? `${swept} more on this network` : '', `port ${port}`]
+      .filter(Boolean)
+      .join(' · '),
   }),
 
   /** A whole Wi-Fi searched, and no table with that code on it. */
@@ -66,9 +68,11 @@ export const NOTICE = {
   }),
 
   /** A guest with no address of its own has no network to look across. */
-  cannotSearch: (): Notice => ({
+  cannotSearch: (hotspot = false): Notice => ({
     say: 'THIS PHONE CANNOT SEE THE WI-FI',
-    fix: `It could not work out its own address, so it has nowhere to look. Check it has joined the Wi-Fi, or type in the address the other phone is showing.`,
+    fix: hotspot
+      ? `It could not work out its own address, so it has nowhere to look. Join the other phone's hotspot in Wi-Fi settings first — this phone has to be on it, not sharing one of its own.`
+      : `It could not work out its own address, so it has nowhere to look. Check it has joined the Wi-Fi, or type in the address the other phone is showing.`,
   }),
 
   /** Something typed that no network could be dialled at. */
