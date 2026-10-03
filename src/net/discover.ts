@@ -71,11 +71,16 @@ export async function localIpAddress(attempts = 1): Promise<string> {
 /**
  * Addresses a phone sharing a hotspot is likely to be at, best guess first.
  *
- * A phone sharing its connection is the gateway of the small network it makes,
- * so a guest that knows its own address knows where the host is: the same three
- * octets, ending in 1. The fixed guesses cover the rest — iOS hands out
- * 172.20.10.x, Android has used 192.168.43.x for years, and a laptop sharing a
- * connection on Windows uses 192.168.137.x.
+ * A phone sharing its connection is the gateway of the small network it makes.
+ * An iPhone is always at 172.20.10.1, and older Androids sat at .1 too — at
+ * 192.168.43.1 for years — and a laptop sharing a connection on Windows uses
+ * 192.168.137.1. So those are worth a try first.
+ *
+ * They are not enough. Since Android 11 a phone sharing a hotspot picks a random
+ * network *and a random address on it* — 192.168.85.137, say — avoiding .1 on
+ * purpose, and nothing an app can read without native code says which. That is
+ * why a guest goes on to sweep its whole network (`lanTargets`): the host is on
+ * it somewhere, and the sweep is the only thing that will find it.
  */
 export const HOTSPOT_GATEWAYS = ['172.20.10.1', '192.168.43.1', '192.168.137.1'];
 
@@ -118,7 +123,15 @@ export function lanTargets(ownIp: string): string[] {
   return out;
 }
 
-const isIpv4 = (s: string) => IPV4.test(s) && s.split('.').every((o) => Number(o) <= 255);
+export const isIpv4 = (s: string) => IPV4.test(s) && s.split('.').every((o) => Number(o) <= 255);
+
+/**
+ * A name the socket layer will take: letters, digits and hyphens, labels of at
+ * most 63 and 253 in all. Anything past that, Android's throws on — natively,
+ * where nothing in the app can catch it.
+ */
+export const isHostname = (s: string) =>
+  s.length <= 253 && /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/.test(s);
 
 /** Somewhere to dial: a host, and the port the table is on there. */
 export type Endpoint = { host: string; port: number };
@@ -157,5 +170,5 @@ export function parseAddress(raw: string, defaultPort: number): Endpoint | null 
   if (!host || !Number.isInteger(port) || port < 1 || port > 65535) return null;
   if (/^[\d.]+$/.test(host)) return isIpv4(host) ? { host, port } : null;
   // A name, for the rare network that hands them out (`laptop.local`).
-  return /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/.test(host) ? { host, port } : null;
+  return isHostname(host) ? { host, port } : null;
 }
