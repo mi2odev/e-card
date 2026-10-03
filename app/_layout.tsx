@@ -10,6 +10,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Stack, usePathname, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { SafeAreaInsetsContext, SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFonts } from 'expo-font';
 import { BebasNeue_400Regular } from '@expo-google-fonts/bebas-neue';
@@ -56,6 +57,7 @@ function AppFrame() {
   const insets = useSafeAreaInsets();
   const banner = useLinkBanner();
   useWakeOnForeground();
+  useAwakeAtTheTable();
 
   return (
     <View style={{ flex: 1, backgroundColor: C.tableEdge }}>
@@ -233,6 +235,33 @@ function useWakeOnForeground() {
     return () => sub.remove();
   }, [active]);
 }
+
+/**
+ * The screen stays on for as long as there is a match or a table.
+ *
+ * A pass & play match sits on the table between turns while the phone is handed
+ * across it; an online one waits on the other player. Either way the screen used
+ * to time out and lock — and a locked phone is the commonest way a Wi-Fi link
+ * drops, which the reconnecting below then has to mend. Not locking is better
+ * than mending. The title screen and setup are left to the phone's own timeout.
+ */
+function useAwakeAtTheTable() {
+  const playing = useGame((s) => s.phase !== 'idle');
+  const linked = useNet((s) => s.active);
+  const awake = playing || linked;
+
+  useEffect(() => {
+    if (!awake) return;
+    // Keeping a screen on is a nicety. A platform that will not do it (a browser
+    // without the wake lock API, say) must not take the match down with it.
+    activateKeepAwakeAsync(KEEP_AWAKE).catch(() => {});
+    return () => {
+      deactivateKeepAwake(KEEP_AWAKE).catch(() => {});
+    };
+  }, [awake]);
+}
+
+const KEEP_AWAKE = 'e-card-table';
 
 function NetRouter() {
   const router = useRouter();

@@ -3,7 +3,7 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import Animated, { Easing, useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
+import Animated, { Easing, useAnimatedStyle, useSharedValue, withDelay, withSequence, withTiming } from 'react-native-reanimated';
 import { C, F, sideColor } from '../src/theme';
 import {
   AmountPad,
@@ -184,7 +184,12 @@ export default function ScoreboardScreen() {
                 </View>
                 <View style={{ alignItems: 'flex-end', gap: 2 }}>
                   {stakesOn ? (
-                    <Purse value={bankOf(state, p)} from={purseBefore(p)} />
+                    <View>
+                      <Purse value={bankOf(state, p)} from={purseBefore(p)} />
+                      {settled && settled.paid > 0 ? (
+                        <Delta key={`delta-${game}`} amount={settled.winner === p ? settled.paid : -settled.paid} />
+                      ) : null}
+                    </View>
                   ) : (
                     <Text style={{ fontFamily: F.display, fontSize: 25, lineHeight: 26, color: C.creamWarm }}>
                       {String(winsOf(state, p))}
@@ -200,7 +205,7 @@ export default function ScoreboardScreen() {
         </Appear>
 
         <Appear delay={170} duration={380} from={10}>
-          <HistoryStrip history={history} currentGame={game} inMatch style={{ marginTop: 14, marginHorizontal: 20 }} />
+          <HistoryStrip history={history} currentGame={game} inMatch pop style={{ marginTop: 14, marginHorizontal: 20 }} />
         </Appear>
 
         {stakesOn ? (
@@ -231,6 +236,9 @@ export default function ScoreboardScreen() {
               <StakeRound label={`−${step}`} disabled={!mine || stake <= min} onPress={() => setTo(stake - step)} />
               <Pressable
                 disabled={!mine}
+                accessibilityRole="button"
+                accessibilityLabel={`Wager ${fmt(stake)}`}
+                accessibilityHint={mine ? 'Count out a wager on the keypad' : undefined}
                 onPress={() => {
                   tick();
                   setPadOpen(true);
@@ -374,6 +382,9 @@ function StakeRound({ label, disabled, onPress }: { label: string; disabled?: bo
   return (
     <Pressable
       disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={`${label.startsWith('+') ? 'Raise' : 'Lower'} the wager by ${label.slice(1)}`}
+      accessibilityState={{ disabled: !!disabled }}
       onPress={() => {
         tick();
         onPress();
@@ -395,6 +406,43 @@ function StakeRound({ label, disabled, onPress }: { label: string; disabled?: bo
     >
       <Text style={{ fontFamily: F.display, fontSize: 18, lineHeight: 20, color: C.creamDim }}>{label}</Text>
     </Pressable>
+  );
+}
+
+/**
+ * What the last round did to a purse, rising off it as the purse counts: gold
+ * for money in, rust for money out. Then it is gone, and the purse is the record.
+ */
+function Delta({ amount }: { amount: number }) {
+  const t = useSharedValue(0);
+  useEffect(() => {
+    t.value = withDelay(260, withTiming(1, { duration: 2000, easing: Easing.out(Easing.cubic) }));
+  }, [t]);
+  const style = useAnimatedStyle(() => ({
+    opacity: t.value < 0.12 ? t.value / 0.12 : 1 - Math.max(0, (t.value - 0.62) / 0.38),
+    transform: [{ translateY: -20 * t.value }],
+  }));
+  const gain = amount > 0;
+  return (
+    <Animated.Text
+      style={[
+        {
+          position: 'absolute',
+          right: '100%',
+          top: 1,
+          width: 110,
+          marginRight: 10,
+          textAlign: 'right',
+          fontFamily: F.display,
+          fontSize: 21,
+          lineHeight: 24,
+          color: gain ? C.goldBright : C.rustText,
+        },
+        style,
+      ]}
+    >
+      {gain ? `+${fmt(amount)}` : `−${fmt(-amount)}`}
+    </Animated.Text>
   );
 }
 

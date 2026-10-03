@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,11 +9,11 @@ import { CARD_ART } from '../src/assets';
 import { Chip, Fade, OutlineButton, useBreathe } from '../src/ui/kit';
 import { FlipCard } from '../src/ui/Cards';
 import { Glow, TableBackground } from '../src/ui/Radial';
-import { Burst, Flash, useShake } from '../src/ui/Motion';
+import { Burst, Flash, Stamp, Zawa, useShake, useTremble } from '../src/ui/Motion';
 import { RevealStep, nameOf, otherSide, useGame } from '../src/store/useGame';
 import { PLAYS_PER_GAME, SIDE_WORD, fmt, sideOfPlayer } from '../src/game/logic';
 import { netAdvance } from '../src/net/actions';
-import { draw as drawBuzz, tapHeavy, upset, win } from '../src/haptics';
+import { draw as drawBuzz, tapHeavy, tapLight, upset, win } from '../src/haptics';
 
 const CARD_W = 146;
 
@@ -71,6 +71,11 @@ export default function RevealScreen() {
         }
       }, ms),
     );
+    // A heartbeat while the two cards lie face down — lub-dub, and again just
+    // before they turn — so the wait is felt in the hand as well as watched.
+    // Skipping clears these with the rest.
+    const beats = drama > 900 ? [260, 430, 140 + drama * 0.62, 140 + drama * 0.62 + 170] : [260, 430];
+    for (const at of beats) timers.current.push(setTimeout(tapLight, 140 + at));
     return () => {
       timers.current.forEach(clearTimeout);
       timers.current = [];
@@ -113,6 +118,11 @@ export default function RevealScreen() {
   const upsetLanded = landed && decisive?.winSide === 'slv';
   const shake = useShake(upsetLanded ? 'upset' : null, 10);
   const sparkColor = decisive?.winSide === 'slv' ? C.rustText : C.goldBright;
+
+  // Face down and waiting: the room murmurs and the cards will not quite sit still.
+  const waiting = rev === 1;
+  const tremble = useTremble(waiting);
+  const [zone, setZone] = useState({ width: 0, height: 0 });
 
   // A drawn third play ends the round outright — nobody takes it and no money moves.
   const spent = !!result && result.draw && result.final;
@@ -162,6 +172,9 @@ export default function RevealScreen() {
 
         <Pressable
           onPress={onZoneTap}
+          accessibilityRole="button"
+          accessibilityLabel="Skip to the result"
+          onLayout={(e) => setZone({ width: e.nativeEvent.layout.width, height: e.nativeEvent.layout.height })}
           style={{ flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center' }}
         >
           <Animated.View
@@ -171,35 +184,58 @@ export default function RevealScreen() {
             <Glow color={glowRust ? 'rgba(207,90,54,0.34)' : 'rgba(226,180,80,0.3)'} edge={0.65} />
           </Animated.View>
 
-          <Animated.View style={[{ flexDirection: 'row', alignItems: 'center', gap: 18 }, shake]}>
-            <Animated.View style={leftVerdict}>
-              <FlipCard
-                width={CARD_W}
-                faceSource={CARD_ART[leftPick ? leftPick.t : 'C']}
-                entered={rev >= 1}
-                flipped={rev >= 2}
-                enterFrom="top"
-                dramaMs={500}
-                glint={landed && leftFate > 0}
-              >
-                <CardLabel name={nameOf(state, 'p1')} side={p1Side} />
-              </FlipCard>
-              <Burst fire={landed && leftFate > 0} color={sparkColor} />
-            </Animated.View>
+          {zone.width ? <Zawa active={waiting} width={zone.width} height={zone.height} /> : null}
 
-            <Animated.View style={rightVerdict}>
-              <FlipCard
-                width={CARD_W}
-                faceSource={CARD_ART[rightPick ? rightPick.t : 'C']}
-                entered={rev >= 1}
-                flipped={rev >= 2}
-                enterFrom="bottom"
-                dramaMs={550}
-                glint={landed && rightFate > 0}
+          {upsetLanded ? (
+            // The upset is sealed onto the table like a verdict, and stays there.
+            <Stamp delay={160} style={{ position: 'absolute', top: '6%' }}>
+              <View
+                style={{
+                  transform: [{ rotate: '-9deg' }],
+                  borderWidth: 3,
+                  borderColor: C.rust,
+                  borderRadius: 12,
+                  paddingHorizontal: 16,
+                  paddingTop: 6,
+                  backgroundColor: 'rgba(30,8,4,0.45)',
+                }}
               >
-                <CardLabel name={nameOf(state, 'p2')} side={p2Side} />
-              </FlipCard>
-              <Burst fire={landed && rightFate > 0} color={sparkColor} />
+                <Text style={{ fontFamily: F.display, fontSize: 64, lineHeight: 66, letterSpacing: 2, color: C.rust }}>5×</Text>
+              </View>
+            </Stamp>
+          ) : null}
+
+          <Animated.View style={shake}>
+            <Animated.View style={[{ flexDirection: 'row', alignItems: 'center', gap: 18 }, tremble]}>
+              <Animated.View style={leftVerdict}>
+                <FlipCard
+                  width={CARD_W}
+                  faceSource={CARD_ART[leftPick ? leftPick.t : 'C']}
+                  entered={rev >= 1}
+                  flipped={rev >= 2}
+                  enterFrom="top"
+                  dramaMs={500}
+                  glint={landed && leftFate > 0}
+                >
+                  <CardLabel name={nameOf(state, 'p1')} side={p1Side} />
+                </FlipCard>
+                <Burst fire={landed && leftFate > 0} color={sparkColor} />
+              </Animated.View>
+
+              <Animated.View style={rightVerdict}>
+                <FlipCard
+                  width={CARD_W}
+                  faceSource={CARD_ART[rightPick ? rightPick.t : 'C']}
+                  entered={rev >= 1}
+                  flipped={rev >= 2}
+                  enterFrom="bottom"
+                  dramaMs={550}
+                  glint={landed && rightFate > 0}
+                >
+                  <CardLabel name={nameOf(state, 'p2')} side={p2Side} />
+                </FlipCard>
+                <Burst fire={landed && rightFate > 0} color={sparkColor} />
+              </Animated.View>
             </Animated.View>
           </Animated.View>
         </Pressable>

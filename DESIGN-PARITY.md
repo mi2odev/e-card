@@ -103,6 +103,13 @@ read as a glitch — each one is a fade or a slide in the same easing vocabulary
 | The scoreboard arrives in order: round, players, history, wager | `app/scoreboard.tsx` | 80 ms apart, 380 ms each. The deal button is never held back |
 | While it is the other phone's move, their face-down cards stir one after another; when it comes back, this phone taps | `app/select.tsx`, `Bob` | Online only. Two phones apart, nothing else says the other player is thinking |
 | Match over: confetti over a winner, the final purses counted out from the opening stake, and the winner's row marked | `app/end.tsx`, `Confetti`, `Tally` | The last screen of twelve rounds deserved more than a table of numbers |
+| This play's cards lie on the felt: an outlined place for each side, and a card back sliding into it — theirs from across the table, yours from the hand | `app/select.tsx`, `PlayedSlot` in `src/ui/Cards.tsx` | "CARD PLAYED" was only words. Pass & play shows the card being answered already down |
+| While the two cards lie face down, ざわ… ざわ… rises around them, the cards will not quite sit still, and the phone beats like a heart | `app/reveal.tsx`, `Zawa`, `useTremble` | Kaiji's own sign that something is about to be decided. Only on the existing `rev` 1 beat, gone the instant the cards turn; the heartbeat taps are cleared with everything else on a skip |
+| A 5× seal is stamped over the table on the Slave upset, and stays | `app/reveal.tsx`, `Stamp` | The banner says who won; the seal says how |
+| The money a round moved rises off each purse — gold `+`, rust `−` — while the purses count | `app/scoreboard.tsx` `Delta` | The count-up shows the purse moving; this says by how much, and which way |
+| The round just decided lands in the history strip; at match over the whole strip reads back in turn | `HistoryStrip pop` / `cascade` in `kit.tsx`, `Pop` | |
+| Match over adds the match in three numbers: 5× upsets, Emperor wins, biggest pot | `app/end.tsx` `Stat` | Counted in from nothing |
+| The title cards keep drifting after they are dealt, each on its own six-second beat | `app/index.tsx` | Under 3 px and 1°: alive, not busy |
 
 Every one of these stands down under the platform's reduced-motion setting (Reanimated's
 `useReducedMotion`): the decoration goes, and the states it decorates are all still shown.

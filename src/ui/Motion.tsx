@@ -517,3 +517,140 @@ export function Bob({
   const style = useAnimatedStyle(() => ({ transform: [{ translateY: -lift * t.value }] }));
   return <Animated.View style={style}>{children}</Animated.View>;
 }
+
+/* -------------------------------------------------------------- pop */
+
+/** In from nothing, a little past full size, and back: a pip landing, a stamp of ink. */
+export function Pop({
+  delay = 0,
+  style,
+  children,
+}: {
+  delay?: number;
+  style?: StyleProp<ViewStyle>;
+  children: React.ReactNode;
+}) {
+  const reduced = useReducedMotion();
+  const t = useSharedValue(reduced ? 1 : 0);
+  useEffect(() => {
+    if (reduced) return;
+    t.value = withDelay(
+      delay,
+      withSequence(
+        withTiming(1.2, { duration: 220, easing: Easing.out(Easing.cubic) }),
+        withTiming(1, { duration: 170, easing: Easing.inOut(Easing.quad) }),
+      ),
+    );
+    // An entrance: once, on arriving.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const anim = useAnimatedStyle(() => ({
+    opacity: Math.min(1, t.value * 1.6),
+    transform: [{ scale: 0.4 + 0.6 * t.value }],
+  }));
+  return <Animated.View style={[style, anim]}>{children}</Animated.View>;
+}
+
+/* -------------------------------------------------------------- tremble */
+
+/**
+ * The faintest unsteadiness while `active` — two cards face down on the felt,
+ * with everything riding on them.
+ */
+export function useTremble(active: boolean, degrees = 0.7) {
+  const reduced = useReducedMotion();
+  const r = useSharedValue(0);
+  useEffect(() => {
+    if (active && !reduced) {
+      r.value = withRepeat(
+        withSequence(
+          withTiming(1, { duration: 70, easing: Easing.inOut(Easing.quad) }),
+          withTiming(-1, { duration: 140, easing: Easing.inOut(Easing.quad) }),
+          withTiming(0, { duration: 70, easing: Easing.inOut(Easing.quad) }),
+          withTiming(0, { duration: 160 }),
+        ),
+        -1,
+        false,
+      );
+    } else {
+      cancelAnimation(r);
+      r.value = withTiming(0, { duration: 120 });
+    }
+  }, [active, reduced, r]);
+  return useAnimatedStyle(() => ({
+    transform: [{ rotate: `${degrees * r.value}deg` }, { translateX: 0.9 * r.value }],
+  }));
+}
+
+/* -------------------------------------------------------------- zawa */
+
+/**
+ * ざわ… ざわ… — the murmur that runs through every room in Kaiji when something
+ * is about to be decided. It rises around the edges of the cards while they lie
+ * face down, and is gone the moment they turn.
+ *
+ * Set in the system face on purpose: the display fonts have no kana, and both
+ * platforms carry a Japanese one to fall back on.
+ */
+export function Zawa({ active, width, height }: { active: boolean; width: number; height: number }) {
+  const reduced = useReducedMotion();
+  const shown = useSharedValue(0);
+  useEffect(() => {
+    shown.value = withTiming(active ? 1 : 0, { duration: active ? 260 : 340, easing: Easing.out(Easing.ease) });
+  }, [active, shown]);
+  const fade = useAnimatedStyle(() => ({ opacity: shown.value }));
+
+  const spots = useMemo(
+    () =>
+      [
+        { x: 0.02, y: 0.2, size: 30, tilt: -12, delay: 0 },
+        { x: 0.68, y: 0.12, size: 38, tilt: 9, delay: 240 },
+        { x: 0.02, y: 0.77, size: 34, tilt: -7, delay: 460 },
+        { x: 0.66, y: 0.81, size: 28, tilt: 11, delay: 150 },
+        { x: 0.34, y: 0.03, size: 24, tilt: -4, delay: 560 },
+        { x: 0.38, y: 0.93, size: 26, tilt: 6, delay: 340 },
+      ].map((s) => ({ ...s, left: s.x * width, top: s.y * height })),
+    [width, height],
+  );
+
+  if (reduced) return null;
+  return (
+    <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, fade]}>
+      {spots.map((s, i) => (
+        <Murmur key={i} {...s} />
+      ))}
+    </Animated.View>
+  );
+}
+
+function Murmur({ left, top, size, tilt, delay }: { left: number; top: number; size: number; tilt: number; delay: number }) {
+  const t = useSharedValue(0);
+  useEffect(() => {
+    t.value = withDelay(delay, withRepeat(withTiming(1, { duration: 820, easing: Easing.inOut(Easing.sin) }), -1, true));
+    return () => cancelAnimation(t);
+  }, [t, delay]);
+  const style = useAnimatedStyle(() => ({
+    opacity: 0.2 + 0.55 * t.value,
+    transform: [{ translateY: -6 * t.value }, { rotate: `${tilt}deg` }, { scale: 0.94 + 0.08 * t.value }],
+  }));
+  return (
+    <Animated.Text
+      style={[
+        {
+          position: 'absolute',
+          left,
+          top,
+          fontSize: size,
+          fontWeight: '900',
+          color: 'rgba(239,229,200,0.85)',
+          textShadowColor: 'rgba(0,0,0,0.6)',
+          textShadowRadius: 6,
+          textShadowOffset: { width: 0, height: 2 },
+        },
+        style,
+      ]}
+    >
+      ざわ…
+    </Animated.Text>
+  );
+}

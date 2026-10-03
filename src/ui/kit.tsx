@@ -33,7 +33,7 @@ import { C, F, GOLD_TEXT_GRADIENT, GOLD_TEXT_LOCATIONS } from '../theme';
 import type { Notice } from '../net/notice';
 import { CARD_ART } from '../assets';
 import { Radial } from './Radial';
-import { Shine } from './Motion';
+import { Pop, Shine } from './Motion';
 import { tapLight } from '../haptics';
 
 /* ------------------------------------------------------------------ shadows */
@@ -120,6 +120,8 @@ export function BigButton({
   const gold = tone === 'gold';
   return (
     <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
       onPress={() => {
         tapLight();
         onPress();
@@ -180,6 +182,9 @@ export function OutlineButton({
   return (
     <Pressable
       disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: !!disabled }}
       onPress={() => {
         tapLight();
         onPress();
@@ -518,57 +523,80 @@ export function HistoryStrip({
   history,
   currentGame,
   inMatch,
+  pop,
+  cascade,
   style,
 }: {
   history: Array<{ g: number; winner: 'p1' | 'p2' | null; winSide: 'emp' | 'slv' | null }>;
   currentGame: number;
   inMatch: boolean;
+  /** The round that has just been decided lands in its place rather than being there already. */
+  pop?: boolean;
+  /** Every pip lands in turn, left to right — the whole match, read back. */
+  cascade?: boolean;
   style?: ViewStyle;
 }) {
   const byGame = new Map(history.map((h) => [h.g, h]));
+  const latest = history.length ? history[history.length - 1].g : 0;
   return (
     <View style={[{ flexDirection: 'row', gap: 5, justifyContent: 'center' }, style]}>
       {Array.from({ length: 12 }, (_, i) => i + 1).map((g) => {
-        const h = byGame.get(g);
-        // A round that ran out of cards without a decision: played, won by nobody.
-        if (h && h.winner === null) {
+        const piece = historyPip(g, byGame.get(g), g === currentGame && inMatch);
+        if (cascade) {
           return (
-            <View
-              key={g}
-              style={[pip.base, { borderWidth: 1, borderColor: 'rgba(212,165,60,0.3)', backgroundColor: 'rgba(255,255,255,0.06)' }]}
-            >
-              <Text style={[pip.txt, { color: C.muted6 }]}>–</Text>
-            </View>
+            <Pop key={g} delay={120 + (g - 1) * 55}>
+              {piece}
+            </Pop>
           );
         }
-        if (h) {
-          const gold = h.winSide === 'emp';
+        if (pop && g === latest) {
           return (
-            <LinearGradient
-              key={g}
-              colors={gold ? ['#e9c25c', '#bb8d2e'] : [C.rustPipTop, C.rustPipBottom]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 0, y: 1 }}
-              style={pip.base}
-            >
-              <Text style={[pip.txt, { color: gold ? C.inkOnPip : C.creamOnRust }]}>{h.winner === 'p1' ? '1' : '2'}</Text>
-            </LinearGradient>
+            <Pop key={g} delay={520}>
+              {piece}
+            </Pop>
           );
         }
-        const isNow = g === currentGame && inMatch;
-        return (
-          <View
-            key={g}
-            style={[
-              pip.base,
-              isNow
-                ? { borderWidth: 1, borderColor: 'rgba(212,165,60,0.8)', backgroundColor: 'rgba(212,165,60,0.12)' }
-                : { borderWidth: 1, borderColor: 'rgba(212,165,60,0.25)', borderStyle: 'dashed' },
-            ]}
-          />
-        );
+        return <React.Fragment key={g}>{piece}</React.Fragment>;
       })}
     </View>
+  );
+}
+
+function historyPip(
+  g: number,
+  h: { winner: 'p1' | 'p2' | null; winSide: 'emp' | 'slv' | null } | undefined,
+  isNow: boolean,
+) {
+  // A round that ran out of cards without a decision: played, won by nobody.
+  if (h && h.winner === null) {
+    return (
+      <View style={[pip.base, { borderWidth: 1, borderColor: 'rgba(212,165,60,0.3)', backgroundColor: 'rgba(255,255,255,0.06)' }]}>
+        <Text style={[pip.txt, { color: C.muted6 }]}>–</Text>
+      </View>
+    );
+  }
+  if (h) {
+    const gold = h.winSide === 'emp';
+    return (
+      <LinearGradient
+        colors={gold ? ['#e9c25c', '#bb8d2e'] : [C.rustPipTop, C.rustPipBottom]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        style={pip.base}
+      >
+        <Text style={[pip.txt, { color: gold ? C.inkOnPip : C.creamOnRust }]}>{h.winner === 'p1' ? '1' : '2'}</Text>
+      </LinearGradient>
+    );
+  }
+  return (
+    <View
+      style={[
+        pip.base,
+        isNow
+          ? { borderWidth: 1, borderColor: 'rgba(212,165,60,0.8)', backgroundColor: 'rgba(212,165,60,0.12)' }
+          : { borderWidth: 1, borderColor: 'rgba(212,165,60,0.25)', borderStyle: 'dashed' },
+      ]}
+    />
   );
 }
 
@@ -675,6 +703,8 @@ export function HelpButton({ style }: { style?: ViewStyle }) {
   return (
     <>
       <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="The rules"
         onPress={() => {
           tapLight();
           setOpen(true);
@@ -910,6 +940,9 @@ function Segment<T extends string>({
 
   return (
     <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={option.caption ? `${option.label}, ${option.caption.toLowerCase()}` : option.label}
+      accessibilityState={{ selected: active }}
       onPress={() => {
         tapLight();
         onPress();
@@ -973,6 +1006,9 @@ export function MoneyChip({
   return (
     <Pressable
       disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: !!disabled, selected: !!active }}
       onPress={() => {
         tapLight();
         onPress();

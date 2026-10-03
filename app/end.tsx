@@ -34,6 +34,12 @@ export default function EndScreen() {
   }
 
   const title = winner ? `${nameOf(state, winner).toUpperCase()} TAKES THE TABLE` : 'DEAD HEAT';
+  // The match in three numbers: how often the Slave struck, how often the
+  // Emperor held, and the most that changed hands at once.
+  const upsets = history.filter((h) => h.winSide === 'slv').length;
+  const emperorWins = history.filter((h) => h.winSide === 'emp').length;
+  const biggestPot = history.reduce((most, h) => Math.max(most, h.paid), 0);
+
   // The last word of the match is felt as well as read.
   useEffect(() => {
     if (winner) win();
@@ -131,8 +137,16 @@ export default function EndScreen() {
           ))}
         </Appear>
 
-        <Appear delay={640} duration={420} from={8}>
-          <HistoryStrip history={history} currentGame={game} inMatch={false} style={{ marginTop: 16 }} />
+        <HistoryStrip history={history} currentGame={game} inMatch={false} cascade style={{ marginTop: 16 }} />
+
+        <Appear delay={900} duration={420} from={10} style={{ width: '100%', flexDirection: 'row', gap: 8, marginTop: 16 }}>
+          <Stat label="5× UPSETS" value={upsets} tone="rust" />
+          <Stat label="EMPEROR WINS" value={emperorWins} tone="gold" />
+          {stakesOn ? (
+            <Stat label="BIGGEST POT" value={biggestPot} tone="gold" />
+          ) : (
+            <Stat label="ROUNDS PLAYED" value={history.length} tone="gold" />
+          )}
         </Appear>
 
         <View style={{ flex: 1, minHeight: 20 }} />
@@ -167,5 +181,33 @@ function Tally({ value, from, money }: { value: number; from: number; money: boo
     <Text style={{ fontFamily: F.display, fontSize: 26, lineHeight: 27, color: C.creamWarm }}>
       {money ? fmt(shown) : String(shown)}
     </Text>
+  );
+}
+
+/** One number from the match, counted in. */
+function Stat({ label, value, tone }: { label: string; value: number; tone: 'gold' | 'rust' }) {
+  const shown = useCountUp(value, 0, 1100);
+  const gold = tone === 'gold';
+  return (
+    <View
+      style={{
+        flex: 1,
+        paddingVertical: 10,
+        paddingHorizontal: 10,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: gold ? C.hairline : C.rustBorder,
+        backgroundColor: 'rgba(0,0,0,0.26)',
+        alignItems: 'center',
+        gap: 2,
+      }}
+    >
+      <Text style={{ fontFamily: F.display, fontSize: 28, lineHeight: 30, color: gold ? C.goldText : C.rustText }}>
+        {fmt(shown)}
+      </Text>
+      <Text numberOfLines={1} style={{ fontFamily: F.semi, fontSize: 8, letterSpacing: 1.5, color: C.muted3 }}>
+        {label}
+      </Text>
+    </View>
   );
 }
