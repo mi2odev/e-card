@@ -3,6 +3,7 @@ import { Image, ImageSourcePropType, Pressable, StyleSheet, Text, View, ViewStyl
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withDelay, withTiming } from 'react-native-reanimated';
 import { C, F } from '../theme';
 import { CARD_ART, CARD_BACK } from '../assets';
+import { LABEL } from '../game/logic';
 import { shadow } from './kit';
 import { Radial } from './Radial';
 import { Shine } from './Motion';
@@ -251,7 +252,14 @@ export function FanCard({
         style,
       ]}
     >
-      <Pressable onPress={onPress} style={{ width: '100%', height: '100%' }}>
+      <Pressable
+        onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel={LABEL[cardType]}
+        accessibilityHint={raised ? 'Plays this card' : 'Picks this card up'}
+        accessibilityState={{ selected: raised }}
+        style={{ width: '100%', height: '100%' }}
+      >
         <CardFace source={CARD_ART[cardType]} width={FAN_W} radius={11} />
         <Animated.View
           pointerEvents="none"
@@ -263,6 +271,67 @@ export function FanCard({
         />
       </Pressable>
     </Animated.View>
+  );
+}
+
+/* ------------------------------------------------------------ played slots */
+const SLOT_W = 58;
+
+/**
+ * A place on the felt for one side's card this play — an empty outline until the
+ * card lands in it face down, sliding in from the side of the table it came from.
+ */
+export function PlayedSlot({
+  filled,
+  from,
+  label,
+  side,
+}: {
+  filled: boolean;
+  from: 'top' | 'bottom';
+  label: string;
+  side: 'emp' | 'slv';
+}) {
+  const t = useSharedValue(0);
+  useEffect(() => {
+    t.value = withTiming(filled ? 1 : 0, { duration: filled ? 460 : 200, easing: Easing.bezier(0.2, 0.8, 0.3, 1) });
+  }, [filled, t]);
+  const top = from === 'top';
+  const card = useAnimatedStyle(() => ({
+    opacity: t.value,
+    transform: [
+      { translateY: (top ? -54 : 70) * (1 - t.value) },
+      { rotate: `${(top ? -16 : 13) * (1 - t.value)}deg` },
+      { scale: 0.88 + 0.12 * t.value },
+    ],
+  }));
+  const gold = side === 'emp';
+  return (
+    <View style={{ alignItems: 'center', gap: 7, width: SLOT_W + 34 }}>
+      <View style={{ width: SLOT_W, height: SLOT_W * CARD_RATIO }}>
+        <View
+          style={[
+            StyleSheet.absoluteFill,
+            {
+              borderRadius: 7,
+              borderWidth: 1,
+              borderStyle: 'dashed',
+              borderColor: gold ? 'rgba(212,165,60,0.32)' : 'rgba(199,90,54,0.38)',
+              backgroundColor: 'rgba(0,0,0,0.16)',
+            },
+          ]}
+        />
+        <Animated.View style={[StyleSheet.absoluteFill, shadow(6, 14, 0.55, 6), card]}>
+          <CardBack width={SLOT_W} radius={7} />
+        </Animated.View>
+      </View>
+      <Text
+        numberOfLines={1}
+        style={{ fontFamily: F.semi, fontSize: 8.5, letterSpacing: 1.6, color: gold ? C.goldSoft : C.rustChip, maxWidth: SLOT_W + 34 }}
+      >
+        {label}
+      </Text>
+    </View>
   );
 }
 

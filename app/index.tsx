@@ -16,7 +16,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   Easing,
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
+  withDelay,
+  withRepeat,
   withSequence,
   withTiming,
 } from 'react-native-reanimated';
@@ -75,6 +78,12 @@ function phase(t: number, from: number, to: number): number {
   return Math.min(1, Math.max(0, (t - from) / (to - from)));
 }
 
+/** Where a card is in its slow drift, -1 to 1, each card on its own beat. */
+function drift(t: number, offset: number): number {
+  'worklet';
+  return Math.sin(2 * Math.PI * (t + offset));
+}
+
 export default function TitleScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -110,6 +119,15 @@ export default function TitleScreen() {
     intro.value = withTiming(1, { duration: 1150, easing: Easing.out(Easing.cubic) });
   }, [intro]);
 
+  // Once dealt, the three never quite sit still: each drifts on its own slow
+  // beat, like cards on a table someone keeps brushing against.
+  const reduced = useReducedMotion();
+  const idle = useSharedValue(0);
+  useEffect(() => {
+    if (reduced) return;
+    idle.value = withDelay(1150, withRepeat(withTiming(1, { duration: 6400, easing: Easing.linear }), -1, false));
+  }, [idle, reduced]);
+
   // Touch one and it comes off the table for a moment, taking a little of the
   // pile with it — the three of them are a deck, not a picture.
   const pokeC = useSharedValue(0);
@@ -136,12 +154,13 @@ export default function TitleScreen() {
   const cardLeft = useAnimatedStyle(() => {
     const p = phase(intro.value, 0, 0.5);
     const k = pokeC.value;
+    const f = drift(idle.value, 0);
     return {
       opacity: p,
       transform: [
         { translateX: 26 * (1 - p) - 7 * k },
-        { translateY: 54 * (1 - p) - 18 * k },
-        { rotate: `${-13 * p - 30 * (1 - p) - 8 * k}deg` },
+        { translateY: 54 * (1 - p) - 18 * k + 2.5 * f },
+        { rotate: `${-13 * p - 30 * (1 - p) - 8 * k + 0.9 * f}deg` },
         { scale: (0.82 + 0.18 * p) * (1 + 0.09 * k) },
       ],
     };
@@ -149,12 +168,13 @@ export default function TitleScreen() {
   const cardRight = useAnimatedStyle(() => {
     const p = phase(intro.value, 0.1, 0.6);
     const k = pokeS.value;
+    const f = drift(idle.value, 0.33);
     return {
       opacity: p,
       transform: [
         { translateX: -26 * (1 - p) + 7 * k },
-        { translateY: 54 * (1 - p) - 18 * k },
-        { rotate: `${13 * p + 30 * (1 - p) + 8 * k}deg` },
+        { translateY: 54 * (1 - p) - 18 * k + 2.5 * f },
+        { rotate: `${13 * p + 30 * (1 - p) + 8 * k - 0.9 * f}deg` },
         { scale: (0.82 + 0.18 * p) * (1 + 0.09 * k) },
       ],
     };
@@ -162,11 +182,12 @@ export default function TitleScreen() {
   const cardMiddle = useAnimatedStyle(() => {
     const p = phase(intro.value, 0.22, 0.74);
     const k = pokeE.value;
+    const f = drift(idle.value, 0.66);
     return {
       opacity: p,
       transform: [
-        { translateY: 66 * (1 - p) - 20 * k },
-        { rotate: `${4 * k}deg` },
+        { translateY: 66 * (1 - p) - 20 * k - 3 * f },
+        { rotate: `${4 * k + 0.5 * f}deg` },
         { scale: (0.78 + 0.22 * p) * (1 + 0.09 * k) },
       ],
     };

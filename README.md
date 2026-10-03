@@ -55,6 +55,9 @@ A link that dies is not the end of the match. Wi-Fi hiccups, a screen locking, a
 carried out of the room, a tap on the wrong thing — all of it is recoverable, because the
 host still holds the whole match and hands the board back to whoever returns.
 
+- **The screen stays on.** From the moment a table opens, or a pass & play match is dealt,
+  until you leave it, the phone does not lock (`expo-keep-awake`). A locked phone was the
+  commonest way a link dropped; not locking beats reconnecting.
 - **The link is dialled again on its own.** A banner says so — amber while it is trying,
   rust once it has given up — and tapping it starts over. Fourteen attempts, the first
   inside a second and the last fifteen seconds apart, about two minutes in all. The lobby

@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { C, F, sideColor } from '../src/theme';
 import { Appear, BigButton, Chip, Fade, HelpButton, SideMono, StatusLine } from '../src/ui/kit';
-import { DiscardPair, FanCard, MiniBack } from '../src/ui/Cards';
+import { DiscardPair, FanCard, MiniBack, PlayedSlot } from '../src/ui/Cards';
 import { TableBackground } from '../src/ui/Radial';
 import { Bob } from '../src/ui/Motion';
 import { localPlayer, localSide, nameOf, otherSide, sidePlayerNow, useGame } from '../src/store/useGame';
@@ -160,6 +160,14 @@ export default function SelectScreen() {
               </View>
             </View>
           ) : null}
+
+          {/* This play, on the felt: whichever card is down lies there face down,
+              the other side's coming in from across the table and this one's from
+              the hand. Pass & play shows the card being answered already there. */}
+          <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'center', gap: 12 }}>
+            <PlayedSlot filled={oppLocked} from="top" side={theirSide} label={nameOf(state, opp).toUpperCase()} />
+            <PlayedSlot filled={iAmLocked} from="bottom" side={mySide} label="YOURS" />
+          </View>
 
           {iAmLocked ? (
             <Appear style={{ alignItems: 'center', gap: 10 }}>
