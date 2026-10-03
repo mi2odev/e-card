@@ -33,6 +33,7 @@ import { C, F, GOLD_TEXT_GRADIENT, GOLD_TEXT_LOCATIONS } from '../theme';
 import type { Notice } from '../net/notice';
 import { CARD_ART } from '../assets';
 import { Radial } from './Radial';
+import { Shine } from './Motion';
 import { tapLight } from '../haptics';
 
 /* ------------------------------------------------------------------ shadows */
@@ -102,6 +103,7 @@ export function BigButton({
   letterSpacing = 3.5,
   radius = 13,
   padV = 19,
+  shine,
   style,
 }: {
   label: string;
@@ -111,6 +113,8 @@ export function BigButton({
   letterSpacing?: number;
   radius?: number;
   padV?: number;
+  /** A glint across the face every few seconds — for the one thing on a screen worth pressing next. */
+  shine?: boolean;
   style?: ViewStyle;
 }) {
   const gold = tone === 'gold';
@@ -136,6 +140,7 @@ export function BigButton({
         >
           {/* inset 0 1px 0 rgba(255,240,200,.55) top highlight */}
           <View style={[StyleSheet.absoluteFill, { borderTopWidth: 1, borderTopColor: 'rgba(255,240,200,0.55)' }]} />
+          {shine ? <Shine strength={gold ? 0.42 : 0.26} /> : null}
           {pressed ? <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.06)' }]} /> : null}
           <Text
             style={{

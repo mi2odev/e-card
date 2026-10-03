@@ -8,6 +8,7 @@ import {
   ScrollView,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -34,6 +35,7 @@ import {
   useKeyboard,
 } from '../src/ui/kit';
 import { Glow, TableBackground } from '../src/ui/Radial';
+import { Dust } from '../src/ui/Motion';
 import { CreditsButton } from '../src/ui/Credits';
 import { useGame } from '../src/store/useGame';
 import { useNet } from '../src/store/useNet';
@@ -76,6 +78,7 @@ function phase(t: number, from: number, to: number): number {
 export default function TitleScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const screen = useWindowDimensions();
   const p1 = useGame((s) => s.p1);
   const p2 = useGame((s) => s.p2);
   const setP1 = useGame((s) => s.setP1);
@@ -194,6 +197,7 @@ export default function TitleScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: C.tableEdge }}>
       <TableBackground />
+      <Dust width={screen.width} height={screen.height} />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
           keyboardShouldPersistTaps="handled"
@@ -344,6 +348,7 @@ export default function TitleScreen() {
               label="PASS & PLAY"
               fontSize={26}
               onPress={() => router.push('/setup')}
+              shine
               style={{ marginTop: 6 }}
             />
             <OutlineButton

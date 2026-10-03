@@ -117,6 +117,7 @@ export default function SetupScreen() {
               beginMatch();
               router.replace('/scoreboard');
             }}
+            shine
             style={{ marginTop: 16 }}
           />
         </ScrollView>

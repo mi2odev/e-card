@@ -1,11 +1,18 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Image, Text, useWindowDimensions, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated from 'react-native-reanimated';
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withDelay,
+  withTiming,
+} from 'react-native-reanimated';
 import { C, F, sideColor } from '../src/theme';
 import { SEAL } from '../src/assets';
-import { BigButton, Chip, PulseRing, useBreathe } from '../src/ui/kit';
+import { Appear, BigButton, Chip, PulseRing, useBreathe } from '../src/ui/kit';
 import { Glow, Radial } from '../src/ui/Radial';
 import { nameOf, otherSide, pickerPlayer, sidePlayerNow, useGame } from '../src/store/useGame';
 import { PLAYS_PER_GAME, SIDE_WORD, fmt } from '../src/game/logic';
@@ -22,6 +29,19 @@ export default function HandoffScreen() {
   const waiting = sidePlayerNow(state, otherSide(picker));
   const sealSize = Math.min(width * 0.52, 172);
   const breathe = useBreathe(3600);
+
+  // The seal arrives like a coin set spinning on the table and coming to rest
+  // face up — the side this player holds, shown as it lands.
+  const reduced = useReducedMotion();
+  const spin = useSharedValue(reduced ? 1 : 0);
+  useEffect(() => {
+    if (reduced) return;
+    spin.value = withDelay(120, withTiming(1, { duration: 820, easing: Easing.bezier(0.2, 0.8, 0.3, 1) }));
+  }, [reduced, spin]);
+  const coin = useAnimatedStyle(() => ({
+    opacity: Math.min(1, spin.value * 3),
+    transform: [{ perspective: 900 }, { rotateY: `${(1 - spin.value) * 540}deg` }, { scale: 0.7 + 0.3 * spin.value }],
+  }));
 
   return (
     <View style={{ flex: 1, backgroundColor: C.handoffBg }}>
@@ -57,38 +77,42 @@ export default function HandoffScreen() {
         <View style={{ flex: 0.5, minHeight: 20 }} />
 
         <Text style={{ fontFamily: F.body, fontSize: 11, letterSpacing: 4, color: C.muted3 }}>PASS THE DEVICE TO</Text>
-        <Text
-          numberOfLines={1}
-          style={{
-            fontFamily: F.display,
-            fontSize: 52,
-            lineHeight: 54,
-            letterSpacing: 3,
-            color: C.creamPale,
-            marginTop: 8,
-            textAlign: 'center',
-            maxWidth: '100%',
-          }}
-        >
-          {nameOf(state, holder).toUpperCase()}
-        </Text>
+        <Appear duration={420} from={10} style={{ maxWidth: '100%' }}>
+          <Text
+            numberOfLines={1}
+            style={{
+              fontFamily: F.display,
+              fontSize: 52,
+              lineHeight: 54,
+              letterSpacing: 3,
+              color: C.creamPale,
+              marginTop: 8,
+              textAlign: 'center',
+              maxWidth: '100%',
+            }}
+          >
+            {nameOf(state, holder).toUpperCase()}
+          </Text>
+        </Appear>
 
         <View style={{ width: sealSize, height: sealSize, marginTop: 16, alignItems: 'center', justifyContent: 'center' }}>
           <Animated.View style={[{ position: 'absolute', left: -sealSize * 0.08, top: -sealSize * 0.08, width: sealSize * 1.16, height: sealSize * 1.16 }, breathe]}>
             <Glow color={picker === 'emp' ? 'rgba(226,180,80,0.4)' : 'rgba(207,90,54,0.42)'} edge={0.68} />
           </Animated.View>
-          <Image
-            source={SEAL[picker]}
-            resizeMode="contain"
-            style={{
-              width: '100%',
-              height: '100%',
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: 14 },
-              shadowOpacity: 0.65,
-              shadowRadius: 11,
-            }}
-          />
+          <Animated.View style={[{ width: '100%', height: '100%' }, coin]}>
+            <Image
+              source={SEAL[picker]}
+              resizeMode="contain"
+              style={{
+                width: '100%',
+                height: '100%',
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 14 },
+                shadowOpacity: 0.65,
+                shadowRadius: 11,
+              }}
+            />
+          </Animated.View>
         </View>
 
         <Text style={{ fontFamily: F.bold, fontSize: 11, letterSpacing: 3.5, color: sideColor(picker), marginTop: 10 }}>

@@ -9,6 +9,7 @@ import { CARD_ART } from '../src/assets';
 import { Chip, Fade, OutlineButton, useBreathe } from '../src/ui/kit';
 import { FlipCard } from '../src/ui/Cards';
 import { Glow, TableBackground } from '../src/ui/Radial';
+import { Burst, Flash, useShake } from '../src/ui/Motion';
 import { RevealStep, nameOf, otherSide, useGame } from '../src/store/useGame';
 import { PLAYS_PER_GAME, SIDE_WORD, fmt, sideOfPlayer } from '../src/game/logic';
 import { netAdvance } from '../src/net/actions';
@@ -106,6 +107,13 @@ export default function RevealScreen() {
   const glowFade = useAnimatedStyle(() => ({ opacity: glowOpacity.value }));
   const glowBreathe = useBreathe(2400);
 
+  // The verdict lands with some force: sparks off the card that took it, and on
+  // the 5x upset the whole table jolts and goes red for an instant.
+  const landed = rev >= 4 && !!decisive;
+  const upsetLanded = landed && decisive?.winSide === 'slv';
+  const shake = useShake(upsetLanded ? 'upset' : null, 10);
+  const sparkColor = decisive?.winSide === 'slv' ? C.rustText : C.goldBright;
+
   // A drawn third play ends the round outright — nobody takes it and no money moves.
   const spent = !!result && result.draw && result.final;
   const roundOver = !result || !result.draw || result.final;
@@ -154,7 +162,7 @@ export default function RevealScreen() {
 
         <Pressable
           onPress={onZoneTap}
-          style={{ flex: 1, width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 18 }}
+          style={{ flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center' }}
         >
           <Animated.View
             pointerEvents="none"
@@ -163,30 +171,36 @@ export default function RevealScreen() {
             <Glow color={glowRust ? 'rgba(207,90,54,0.34)' : 'rgba(226,180,80,0.3)'} edge={0.65} />
           </Animated.View>
 
-          <Animated.View style={leftVerdict}>
-            <FlipCard
-              width={CARD_W}
-              faceSource={CARD_ART[leftPick ? leftPick.t : 'C']}
-              entered={rev >= 1}
-              flipped={rev >= 2}
-              enterFrom="top"
-              dramaMs={500}
-            >
-              <CardLabel name={nameOf(state, 'p1')} side={p1Side} />
-            </FlipCard>
-          </Animated.View>
+          <Animated.View style={[{ flexDirection: 'row', alignItems: 'center', gap: 18 }, shake]}>
+            <Animated.View style={leftVerdict}>
+              <FlipCard
+                width={CARD_W}
+                faceSource={CARD_ART[leftPick ? leftPick.t : 'C']}
+                entered={rev >= 1}
+                flipped={rev >= 2}
+                enterFrom="top"
+                dramaMs={500}
+                glint={landed && leftFate > 0}
+              >
+                <CardLabel name={nameOf(state, 'p1')} side={p1Side} />
+              </FlipCard>
+              <Burst fire={landed && leftFate > 0} color={sparkColor} />
+            </Animated.View>
 
-          <Animated.View style={rightVerdict}>
-            <FlipCard
-              width={CARD_W}
-              faceSource={CARD_ART[rightPick ? rightPick.t : 'C']}
-              entered={rev >= 1}
-              flipped={rev >= 2}
-              enterFrom="bottom"
-              dramaMs={550}
-            >
-              <CardLabel name={nameOf(state, 'p2')} side={p2Side} />
-            </FlipCard>
+            <Animated.View style={rightVerdict}>
+              <FlipCard
+                width={CARD_W}
+                faceSource={CARD_ART[rightPick ? rightPick.t : 'C']}
+                entered={rev >= 1}
+                flipped={rev >= 2}
+                enterFrom="bottom"
+                dramaMs={550}
+                glint={landed && rightFate > 0}
+              >
+                <CardLabel name={nameOf(state, 'p2')} side={p2Side} />
+              </FlipCard>
+              <Burst fire={landed && rightFate > 0} color={sparkColor} />
+            </Animated.View>
           </Animated.View>
         </Pressable>
 
@@ -239,6 +253,8 @@ export default function RevealScreen() {
           />
         </Fade>
       </View>
+      <Flash fire={upsetLanded} color={C.rust} peak={0.26} />
+      <Flash fire={landed && !upsetLanded} color={C.goldLight} peak={0.08} />
     </View>
   );
 }

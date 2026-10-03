@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
@@ -17,13 +17,14 @@ import {
 } from '../src/ui/kit';
 import { SidePanel, StakesPanel } from '../src/ui/Terms';
 import { TableBackground } from '../src/ui/Radial';
+import { Radar } from '../src/ui/Motion';
 import { nameOf, useGame } from '../src/store/useGame';
 import { useNet } from '../src/store/useNet';
 import { requestExit } from '../src/ui/ExitGuard';
 import { retryNow } from '../src/net/session';
 import { STATUS_WORD } from '../src/net/protocol';
 import { says } from '../src/net/notice';
-import { tapLight } from '../src/haptics';
+import { tapLight, win } from '../src/haptics';
 
 export default function LobbyScreen() {
   const insets = useSafeAreaInsets();
@@ -37,6 +38,14 @@ export default function LobbyScreen() {
   const seated = net.peerHere && net.status === 'connected';
   // The code breathes while the seat opposite is empty, and settles when it fills.
   const codePulse = useWaitingPulse(!seated);
+
+  // Somebody sitting down is the moment this screen exists for: it is felt as
+  // well as seen, on both phones.
+  const wasSeated = useRef(seated);
+  useEffect(() => {
+    if (seated && !wasSeated.current) win();
+    wasSeated.current = seated;
+  }, [seated]);
 
   const leave = () => {
     tapLight();
@@ -83,13 +92,17 @@ export default function LobbyScreen() {
           <Text style={{ fontFamily: F.body, fontSize: 10, letterSpacing: 3, color: C.muted3 }}>
             {isHost ? 'YOUR TABLE CODE' : 'AT THE TABLE'}
           </Text>
-          <Animated.View style={[{ marginTop: 4 }, codePulse]}>
-            <GradientText
-              style={{ fontFamily: F.display, fontSize: 62, lineHeight: 64, letterSpacing: 12, textAlign: 'center' }}
-            >
-              {net.code}
-            </GradientText>
-          </Animated.View>
+          <View style={{ marginTop: 4, alignItems: 'center', justifyContent: 'center' }}>
+            {/* The table calling out across the room for its other player. */}
+            <Radar active={!seated && !failed} size={RADAR} style={{ top: 32 - RADAR / 2 }} />
+            <Animated.View style={codePulse}>
+              <GradientText
+                style={{ fontFamily: F.display, fontSize: 62, lineHeight: 64, letterSpacing: 12, textAlign: 'center' }}
+              >
+                {net.code}
+              </GradientText>
+            </Animated.View>
+          </View>
 
           {/* A word for the states that need one, and a proper notice for the
               ones with something to explain. */}
@@ -108,6 +121,10 @@ export default function LobbyScreen() {
             />
           )}
 
+          {net.scan && net.scan.total > 0 && !seated && !failed ? (
+            <ScanBar dialled={net.scan.dialled} total={net.scan.total} />
+          ) : null}
+
           {failed ? (
             <OutlineButton
               label="TRY AGAIN"
@@ -125,14 +142,16 @@ export default function LobbyScreen() {
               label={
                 net.info.mode === 'direct'
                   ? `SERVED BY THIS PHONE · ${net.info.hint}`
-                  : net.info.mode === 'hotspot'
-                    ? net.info.hint
-                    : // A guest dials an address and is never told what answered
-                      // — a relay, or the other phone serving the table itself.
-                      // Only the host knows it went looking for a relay.
-                      isHost
-                      ? `VIA RELAY ${net.info.hint}`
-                      : `TABLE AT ${net.info.hint}`
+                  : net.info.mode === 'found'
+                    ? `FOUND ON THE WI-FI AT ${net.info.hint}`
+                    : net.info.mode === 'hotspot'
+                      ? net.info.hint
+                      : // A guest dials an address and is never told what answered
+                        // — a relay, or the other phone serving the table itself.
+                        // Only the host knows it went looking for a relay.
+                        isHost
+                        ? `VIA RELAY ${net.info.hint}`
+                        : `TABLE AT ${net.info.hint}`
               }
             />
           ) : null}
@@ -145,7 +164,13 @@ export default function LobbyScreen() {
 
           {isHost && net.info?.mode === 'relay' ? (
             <Prose tone="quiet" style={{ marginTop: 8, textAlign: 'center' }}>
-              The other phone needs this code and the same relay address.
+              The other phone only needs this code — it finds the relay on the Wi-Fi by itself.
+            </Prose>
+          ) : null}
+
+          {isHost && net.info?.mode === 'direct' ? (
+            <Prose tone="quiet" style={{ marginTop: 8, textAlign: 'center' }}>
+              The other phone only needs this code — it finds this one on the Wi-Fi by itself.
             </Prose>
           ) : null}
         </View>
@@ -194,6 +219,7 @@ export default function LobbyScreen() {
             onPress={() => {
               if (seated) state.beginMatch();
             }}
+            shine={seated}
             style={{ marginTop: 16, opacity: seated ? 1 : 0.45 }}
           />
         ) : (
@@ -214,6 +240,30 @@ export default function LobbyScreen() {
           </View>
         )}
       </ScrollView>
+    </View>
+  );
+}
+
+const RADAR = 224;
+
+/**
+ * How far a guest's search of the network has got. The search is the slow part
+ * of joining, and a bar that moves says it is getting somewhere.
+ */
+function ScanBar({ dialled, total }: { dialled: number; total: number }) {
+  const t = useSharedValue(0);
+  useEffect(() => {
+    t.value = withTiming(Math.min(1, dialled / total), { duration: 260, easing: Easing.out(Easing.ease) });
+  }, [dialled, total, t]);
+  const fill = useAnimatedStyle(() => ({ width: `${t.value * 100}%` }));
+  return (
+    <View style={{ alignSelf: 'stretch', marginTop: 10, gap: 6 }}>
+      <View style={{ height: 3, borderRadius: 2, backgroundColor: 'rgba(212,165,60,0.14)', overflow: 'hidden' }}>
+        <Animated.View style={[{ height: '100%', borderRadius: 2, backgroundColor: C.goldSoft }, fill]} />
+      </View>
+      <Text style={{ fontFamily: F.semi, fontSize: 9, letterSpacing: 1.8, color: C.muted3, textAlign: 'center' }}>
+        {`SEARCHED ${dialled} OF ${total} ADDRESSES`}
+      </Text>
     </View>
   );
 }

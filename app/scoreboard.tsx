@@ -7,6 +7,7 @@ import Animated, { Easing, useAnimatedStyle, useSharedValue, withSequence, withT
 import { C, F, sideColor } from '../src/theme';
 import {
   AmountPad,
+  Appear,
   BigButton,
   GradientText,
   HelpButton,
@@ -18,12 +19,13 @@ import {
   useCountUp,
 } from '../src/ui/kit';
 import { TableBackground } from '../src/ui/Radial';
+import { Stamp } from '../src/ui/Motion';
 import { bankOf, canSetStake, localPlayer, nameOf, sidePlayerNow, stakeRange, useGame, winsOf } from '../src/store/useGame';
 import type { PlayerKey } from '../src/game/logic';
 import { fmt, isSwapGame, payoutPreview, setNumber, sideOfPlayer, stakeStep } from '../src/game/logic';
 import { netDeal, netSetStake } from '../src/net/actions';
 import { requestExit } from '../src/ui/ExitGuard';
-import { tapLight, tick } from '../src/haptics';
+import { tapHeavy, tapLight, tick } from '../src/haptics';
 
 export default function ScoreboardScreen() {
   const router = useRouter();
@@ -107,7 +109,7 @@ export default function ScoreboardScreen() {
           <HelpButton />
         </View>
 
-        <View style={{ alignItems: 'center', marginTop: 2 }}>
+        <Appear key={`round-${game}`} duration={420} from={0} scaleFrom={0.9} style={{ alignItems: 'center', marginTop: 2 }}>
           <Text style={{ fontFamily: F.body, fontSize: 10, letterSpacing: 3, color: C.muted3 }}>
             {`SET ${setNumber(game)} OF 4`}
           </Text>
@@ -117,10 +119,11 @@ export default function ScoreboardScreen() {
             </GradientText>
           </View>
           <Text style={{ fontFamily: F.body, fontSize: 10.5, letterSpacing: 3, color: C.muted, marginTop: 4 }}>OF TWELVE</Text>
-        </View>
+        </Appear>
 
         {isSwapGame(game) ? (
-          <View style={{ alignItems: 'center', marginTop: 12 }}>
+          // The sides changing hands is slammed onto the table, not mentioned.
+          <Stamp key={`swap-${game}`} delay={380} onLand={tapHeavy} style={{ alignItems: 'center', marginTop: 12 }}>
             <LinearGradient
               colors={['rgba(212,165,60,0)', 'rgba(212,165,60,0.16)', 'rgba(212,165,60,0)']}
               start={{ x: 0, y: 0 }}
@@ -138,10 +141,13 @@ export default function ScoreboardScreen() {
                 SIDES SWAP
               </Text>
             </LinearGradient>
-          </View>
+          </Stamp>
         ) : null}
 
-        <View
+        <Appear
+          delay={90}
+          duration={380}
+          from={12}
           style={{
             marginHorizontal: 20,
             marginTop: 16,
@@ -191,12 +197,17 @@ export default function ScoreboardScreen() {
               </View>
             );
           })}
-        </View>
+        </Appear>
 
-        <HistoryStrip history={history} currentGame={game} inMatch style={{ marginTop: 14, marginHorizontal: 20 }} />
+        <Appear delay={170} duration={380} from={10}>
+          <HistoryStrip history={history} currentGame={game} inMatch style={{ marginTop: 14, marginHorizontal: 20 }} />
+        </Appear>
 
         {stakesOn ? (
-          <View
+          <Appear
+            delay={240}
+            duration={380}
+            from={12}
             style={{
               marginHorizontal: 20,
               marginTop: 16,
@@ -276,7 +287,7 @@ export default function ScoreboardScreen() {
             {!mine ? (
               <StatusLine tone="dim" text={`${nameOf(state, slavePlayer).toUpperCase()} IS NAMING THE WAGER`} />
             ) : null}
-          </View>
+          </Appear>
         ) : null}
 
         <View style={{ flex: 1, minHeight: 14 }} />
@@ -288,6 +299,7 @@ export default function ScoreboardScreen() {
               netDeal();
               if (!online) router.replace('/handoff');
             }}
+            shine
             style={{ marginTop: 16, marginHorizontal: 20 }}
           />
         ) : (

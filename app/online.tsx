@@ -84,7 +84,8 @@ export default function OnlineScreen() {
   // A guest may still say where the table is. It is the first place looked.
   const offersAddress = role === 'guest' && !onHotspot;
   const typed = address.trim();
-  const addressOk = !typed || parseAddress(typed, DEFAULT_PORT) !== null;
+  // Only an address that is going to be dialled can hold the button back.
+  const addressOk = !(needsAddress || offersAddress) || !typed || parseAddress(typed, DEFAULT_PORT) !== null;
   const ready = useMemo(
     () => isCompleteRoomCode(code) && (needsAddress ? typed.length > 0 && addressOk : addressOk) && !busy,
     [code, needsAddress, typed, addressOk, busy],
@@ -464,6 +465,7 @@ export default function OnlineScreen() {
             label={busy ? 'ONE MOMENT…' : role === 'host' ? 'OPEN THE TABLE' : 'JOIN THE TABLE'}
             fontSize={24}
             onPress={go}
+            shine={ready}
             style={{ marginTop: 18, opacity: ready ? 1 : 0.45 }}
           />
         </ScrollView>
